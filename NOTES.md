@@ -50,6 +50,21 @@ _Provisional — rough linear mapping; calibrate against observed days once live
 
 ---
 
+## Task completion log
+
+| Task | Status | Commit |
+|---|---|---|
+| CONFIG block + NOTES scaffold | ✅ Done | `7dbc73c` |
+| Task 0 — feed reachability spike | ✅ Done | `460cebd` |
+| FIRMS key via localStorage UI | ✅ Done | `8084e36` |
+| Task 1 — FIRMS satellite hotspots | ✅ Done | `2031801` |
+| Task 2 — IPMA RCM official risk | ⏳ Next | — |
+| Task 3 — continuous upwind + fire age | ⏳ Pending | — |
+| Task 4 — forecast smoke + confidence | ⏳ Pending | — |
+| Task E — EFFIS FWI | ❌ Blocked | — |
+
+---
+
 ## Blocked sources
 
 - **EFFIS/GWIS FWI** — No browser-accessible point query. HTML-only dashboard, no JSON API, no CORS headers. Task E blocked; keep heuristic + IPMA RCM.
