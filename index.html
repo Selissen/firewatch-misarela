@@ -297,6 +297,8 @@
       <div id="map"></div>
       <div class="legend">
         <span><span class="lgdot" style="background:var(--river)"></span>hotel</span>
+        <span><svg width="13" height="13" viewBox="0 0 13 13" style="vertical-align:middle;margin-right:5px"><g transform="translate(6.5,6.5) rotate(0)"><line x1="0" y1="5" x2="0" y2="-2" stroke="#5fb6c9" stroke-width="1.8" stroke-linecap="round" opacity=".7"/><polygon points="0,-5.5 -2,-2 2,-2" fill="#5fb6c9" opacity=".7"/></g></svg>wind (from)</span>
+        <span><span class="lgdot" style="background:var(--monitor);opacity:.45;box-shadow:0 0 0 4px rgba(201,178,62,.18)"></span>smoke haze</span>
         <span><span class="lgdot" style="background:var(--high)"></span>active fire</span>
         <span><span class="lgdot" style="background:var(--caution)"></span>upwind of hotel</span>
         <span><span class="lgdot" style="background:transparent;border:2px solid var(--high)"></span>satellite detect</span>
@@ -453,7 +455,7 @@
   }
 
   // ---- MAP ----
-  let map,fireLayer,hotelMarker,ringLayer;
+  let map,fireLayer,hotelMarker,ringLayer,windArrowMarker=null,aqAura=null;
   function initMap(){
     map=L.map('map',{zoomControl:true,attributionControl:true,scrollWheelZoom:false}).setView([HOTEL.lat,HOTEL.lng],9);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18,subdomains:'abcd',attribution:'&copy; OpenStreetMap &copy; CARTO'}).addTo(map);
@@ -467,6 +469,28 @@
     hotelMarker=L.circleMarker([HOTEL.lat,HOTEL.lng],{radius:7,color:'#0e1115',weight:2,fillColor:'#5fb6c9',fillOpacity:1}).addTo(map);
     hotelMarker.bindPopup('<b>Hotel Rural Misárela</b><br>'+HOTEL.lat.toFixed(4)+', '+HOTEL.lng.toFixed(4));
     map.setView([HOTEL.lat,HOTEL.lng],9);
+  }
+  // Wind direction arrow: points toward where wind comes FROM (upwind source).
+  // Rotating by windDir (meteorological "from" bearing) puts the arrowhead upwind.
+  function drawWindArrow(windDir,windSpeed){
+    if(windArrowMarker){windArrowMarker.remove();windArrowMarker=null;}
+    if(windDir==null)return;
+    const spd=Math.round(windSpeed||0);
+    const icon=L.divIcon({className:'',iconSize:[48,48],iconAnchor:[24,24],
+      html:`<svg width="48" height="48" viewBox="0 0 48 48" fill="none" style="overflow:visible" aria-label="Wind from ${compass(windDir)}, ${spd} km/h">
+        <g transform="translate(24,24) rotate(${windDir})">
+          <line x1="0" y1="15" x2="0" y2="-6" stroke="#5fb6c9" stroke-width="2" stroke-linecap="round" opacity=".7"/>
+          <polygon points="0,-16 -5,-6 5,-6" fill="#5fb6c9" opacity=".7"/>
+        </g>
+      </svg>`});
+    windArrowMarker=L.marker([HOTEL.lat,HOTEL.lng],{icon,interactive:false,zIndexOffset:-100}).addTo(map);
+  }
+  // Smoke/AQ aura: faint coloured disc around hotel proportional to PM2.5 severity.
+  function drawAqAura(pm){
+    if(aqAura){aqAura.remove();aqAura=null;}
+    if(pm==null||pm<10)return; // clean air — no visual clutter
+    const hex=pm<25?'#c9b23e':pm<50?'#e0902e':'#e2543b';
+    aqAura=L.circle([HOTEL.lat,HOTEL.lng],{radius:1800,color:hex,weight:0,fillColor:hex,fillOpacity:0.13}).addTo(map);
   }
 
   // ---- FETCH ----
@@ -618,6 +642,7 @@
       $('#wxDesc').textContent='peak over your stay · '+fmtDate(worst.date);
     } else { $('#wxVal').textContent='outside 16-day range'; $('#wxDesc').textContent='check back closer to your dates'; }
     $('#wxDot').style.background=wxHex;
+    drawWindArrow(c.wind_direction_10m,c.wind_speed_10m);
     return {wxLevel,wxLabel,wxHex,inRange,peakScore,current:c};
   }
 
@@ -783,6 +808,7 @@
     if(pm!=null){smokeTxt=pm<10?'Clean air':pm<25?'Slight haze':pm<50?'Smoky':'Heavy smoke';
       smokeLevel=pm<10?0:pm<25?1:pm<50?2:3; smokeHex=pm<10?'#3fae7a':pm<25?'#c9b23e':pm<50?'#e0902e':'#e2543b';}
     $('#smokeVal').textContent=smokeTxt; $('#smokeDot').style.background=smokeHex;
+    drawAqAura(pm);
     return {smokeLevel,pm};
   }
 

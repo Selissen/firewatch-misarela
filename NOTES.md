@@ -58,9 +58,9 @@ _Provisional — rough linear mapping; calibrate against observed days once live
 | Task 0 — feed reachability spike | ✅ Done | `460cebd` |
 | FIRMS key via localStorage UI | ✅ Done | `8084e36` |
 | Task 1 — FIRMS satellite hotspots | ✅ Done | `2031801` |
-| Task 2 — IPMA RCM official risk | ⏳ Next | — |
-| Task 3 — continuous upwind + fire age | ⏳ Pending | — |
-| Task 4 — forecast smoke + confidence | ⏳ Pending | — |
+| Task 2 — IPMA RCM official risk | ✅ Done | `cbb7c49` |
+| Task 3 — continuous upwind + fire age | ✅ Done | `1390bee` |
+| Task 4 — forecast smoke + confidence | ✅ Done | `5d50bb2` |
 | Task E — EFFIS FWI | ❌ Blocked | — |
 
 ---
