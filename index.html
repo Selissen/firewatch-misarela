@@ -346,6 +346,11 @@
     {max:60,label:"High",hex:"#e0902e"},{max:80,label:"Very high",hex:"#d96a2e"},{max:101,label:"Extreme",hex:"#e2543b"}
   ];
   const LS='mfw_';
+  const CONFIG = {
+    firmsMapKey: "",                  // set to your NASA FIRMS map key; empty => FIRMS disabled
+    sources: { fogos:true, firms:false, ipma:false, effis:false }, // flip on as each source lands
+    bboxRadiusDeg: 0.7,               // ~75 km half-box for satellite/cross-border detection
+  };
   const $=s=>document.querySelector(s);
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
   const toRad=d=>d*Math.PI/180;
