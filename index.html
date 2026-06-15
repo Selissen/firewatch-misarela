@@ -119,6 +119,9 @@
   .empty{padding:30px 18px;text-align:center;color:var(--mist-dim);font-size:13px}
   .empty .big{font-family:var(--display);font-size:15px;color:var(--clear);margin-bottom:6px}
   .errline{padding:14px 18px;font-size:12.5px;color:var(--caution);border-top:1px solid var(--line);font-family:var(--mono)}
+  .sat-badge{display:inline-block;font-family:var(--mono);font-size:9px;letter-spacing:.06em;text-transform:uppercase;border-radius:3px;padding:2px 5px;white-space:nowrap}
+  .sat-badge.confirmed{background:rgba(95,182,201,.12);color:var(--river);border:1px solid rgba(95,182,201,.35)}
+  .sat-badge.unconfirmed{background:var(--granite-2);color:var(--mist-faint);border:1px solid var(--line-bright)}
 
   /* weather */
   .wxwrap{margin-top:18px}
@@ -286,6 +289,8 @@
         <span><span class="lgdot" style="background:var(--river)"></span>hotel</span>
         <span><span class="lgdot" style="background:var(--high)"></span>active fire</span>
         <span><span class="lgdot" style="background:var(--caution)"></span>upwind of hotel</span>
+        <span><span class="lgdot" style="background:transparent;border:2px solid var(--high)"></span>satellite detect</span>
+        <span><span class="lgdot" style="background:var(--high);box-shadow:0 0 0 2px rgba(95,182,201,.6)"></span>sat-confirmed</span>
         <span><span class="lgline"></span>distance rings</span>
       </div>
     </div>
@@ -317,6 +322,7 @@
         <tr><td><span class="sw" style="background:var(--high)"></span>High concern</td><td>significant active fire within ~10 km / upwind, or Extreme fire weather</td></tr>
       </table>
       <p><b>Fire weather</b> (0–100, indicative) rises with heat, low humidity and wind, falls with rain, and is scaled by <b>drought memory</b> — the last 30 days of rainfall at this point. <b>Threat ranking</b> weights each fire by distance, size (crew &amp; aircraft committed), upwind position and lifecycle status, so a large fire winding down counts less than a small one taking hold nearby.</p>
+      <p><b>Satellite hotspots</b> (NASA FIRMS VIIRS, ~375 m, ~1–3 h latency) extend detection across the Spanish border before ground crews report. Hotspots within 2 km of a fogos.pt incident are marked "sat ✦" (confirmed); unmatched ones appear as hollow markers — possible false positives from industrial heat or sun glint. Requires a personal FIRMS map key (set in "Adjust location").</p>
     </div>
     <div>
       <h4>The realistic risk for a guest</h4>
@@ -428,6 +434,45 @@
   async function getFires(){
     const r=await fetch('https://api.fogos.pt/v2/incidents/active'); if(!r.ok)throw new Error('fires '+r.status); return r.json();
   }
+  async function getFirms(){
+    const key=CONFIG.firmsMapKey; if(!key)return[];
+    const rd=CONFIG.bboxRadiusDeg;
+    const bbox=`${(HOTEL.lng-rd).toFixed(3)},${(HOTEL.lat-rd).toFixed(3)},${(HOTEL.lng+rd).toFixed(3)},${(HOTEL.lat+rd).toFixed(3)}`;
+    const base=`https://firms.modaps.eosdis.nasa.gov/api/area/csv/${key}`;
+    const [r1,r2]=await Promise.allSettled([
+      fetch(`${base}/VIIRS_NOAA20_NRT/${bbox}/1`),
+      fetch(`${base}/VIIRS_SNPP_NRT/${bbox}/1`)
+    ]);
+    const out=[];
+    for(const res of [r1,r2]){
+      if(res.status!=='fulfilled'||!res.value.ok)continue;
+      const txt=await res.value.text(); const lines=txt.trim().split('\n');
+      if(lines.length<2)continue;
+      const hdr=lines[0].split(','); const col=h=>hdr.indexOf(h);
+      for(let i=1;i<lines.length;i++){
+        const c=lines[i].split(',');
+        if(c[col('confidence')]==='l')continue; // drop low-confidence pixels
+        const lat=parseFloat(c[col('latitude')]),lng=parseFloat(c[col('longitude')]);
+        if(isNaN(lat)||isNaN(lng))continue;
+        out.push({lat,lng,frp:parseFloat(c[col('frp')])||0,confidence:c[col('confidence')],
+          acq_date:c[col('acq_date')],satellite:c[col('satellite')]});
+      }
+    }
+    return out;
+  }
+  function clusterFirms(pts){
+    const used=new Set(),clusters=[];
+    for(let i=0;i<pts.length;i++){
+      if(used.has(i))continue;
+      const grp=[i]; used.add(i);
+      for(let j=i+1;j<pts.length;j++){
+        if(!used.has(j)&&haversine(pts[i],pts[j])<2){grp.push(j);used.add(j);}
+      }
+      const best=grp.reduce((a,b)=>pts[b].frp>pts[a].frp?b:a);
+      clusters.push({...pts[best],pixelCount:grp.length});
+    }
+    return clusters;
+  }
   function dailyHumidityMin(hourly,dateStr){
     if(!hourly||!hourly.time)return null; let mn=999;
     for(let i=0;i<hourly.time.length;i++){if(hourly.time[i].startsWith(dateStr)){const v=hourly.relative_humidity_2m[i];if(v!=null&&v<mn)mn=v;}}
@@ -492,64 +537,118 @@
     return {wxLevel,wxLabel,wxHex,inRange,peakScore,current:c};
   }
 
-  // ---- RENDER FIRES (threat ranked) ----
-  function renderFires(json){
-    const list=(json&&json.data)?json.data:[];
+  // ---- RENDER FIRES (threat ranked, fused fogos + FIRMS) ----
+  function renderFires(json, firmsClusters){
+    firmsClusters=firmsClusters||[];
+    const fogosList=(json&&json.data)?json.data:[];
     const wind=lastWeather&&lastWeather.current?lastWeather.current.wind_direction_10m:null;
-    const enriched=list.map(f=>{
+
+    // enrich fogos incidents; annotate ones confirmed by a satellite pixel within 2 km
+    const enrichedFogos=fogosList.map(f=>{
       const lat=parseFloat(f.lat),lng=parseFloat(f.lng);
       if(isNaN(lat)||isNaN(lng))return null;
       const dist=haversine(HOTEL,{lat,lng});
       let upwind=false;
-      if(wind!=null){const brg=bearing({lat,lng},HOTEL);const windToward=(wind+180)%360;
-        let diff=Math.abs(((brg-windToward+540)%360)-180); upwind=diff<55 && dist<60;}
+      if(wind!=null){const brg=bearing({lat,lng},HOTEL);const wt=(wind+180)%360;
+        let diff=Math.abs(((brg-wt+540)%360)-180);upwind=diff<55&&dist<60;}
       const sf=statusFactor(f.status);
       const size=(f.man||0)+(f.terrain||0)+6*(f.aerial||0);
       const distF=Math.exp(-dist/18);
       const threat=distF*(0.6+Math.log10(1+size)/2)*sf*(upwind?1.4:1);
-      return {...f,lat,lng,dist,upwind,sf,size,threat};
-    }).filter(Boolean).sort((a,b)=>b.threat-a.threat);
+      const confirmedBy=firmsClusters.find(c=>haversine({lat,lng},c)<2);
+      return {...f,lat,lng,dist,upwind,sf,size,threat,satStatus:confirmedBy?'confirmed':null,source:'fogos'};
+    }).filter(Boolean);
 
-    fireLayer.clearLayers();
-    enriched.forEach(f=>{
-      const col=f.sf<=0.3?'#7f8a97':f.upwind?'#e0902e':'#e2543b';
-      const m=L.circleMarker([f.lat,f.lng],{radius:Math.max(5,Math.min(12,4+(f.size)/30)),color:'#0e1115',weight:1.5,fillColor:col,fillOpacity:.85});
-      m.bindPopup(`<b>${f.location||f.concelho||'Fire'}</b><br>${Math.round(f.dist)} km · ${f.status||''}<br>${f.man||0} crew · ${f.aerial||0} air${f.upwind?'<br><b style="color:#e0902e">upwind</b>':''}`);
-      m.addTo(fireLayer);
+    // track which FIRMS clusters match a fogos incident
+    const matchedFirmsIdx=new Set();
+    enrichedFogos.forEach(f=>{
+      const idx=firmsClusters.findIndex(c=>haversine({lat:f.lat,lng:f.lng},c)<2);
+      if(idx>=0)matchedFirmsIdx.add(idx);
     });
 
+    // synthetic incidents for unmatched FIRMS clusters (cross-border / lead detections)
+    const firmsOnly=firmsClusters.filter((_,i)=>!matchedFirmsIdx.has(i)).map(c=>{
+      const dist=haversine(HOTEL,c);
+      let upwind=false;
+      if(wind!=null){const brg=bearing(c,HOTEL);const wt=(wind+180)%360;
+        let diff=Math.abs(((brg-wt+540)%360)-180);upwind=diff<55&&dist<60;}
+      const frpSize=c.frp/5; // FRP (MW) as size proxy
+      const distF=Math.exp(-dist/18);
+      const threat=distF*(0.6+Math.log10(1+frpSize)/2)*0.8*(upwind?1.4:1)*0.75; // 0.75 unconfirmed discount
+      return {lat:c.lat,lng:c.lng,dist,upwind,sf:0.8,size:frpSize,threat,
+        satStatus:'unconfirmed',source:'firms',frp:c.frp,pixelCount:c.pixelCount||1,
+        location:null,status:'satellite detection',man:0,terrain:0,aerial:0,
+        acq_date:c.acq_date,concelho:null};
+    });
+
+    const all=[...enrichedFogos,...firmsOnly].sort((a,b)=>b.threat-a.threat);
+
+    // ---- MAP markers ----
+    fireLayer.clearLayers();
+    all.forEach(f=>{
+      const col=f.sf<=0.3?'#7f8a97':f.upwind?'#e0902e':'#e2543b';
+      if(f.source==='firms'){
+        // hollow circle for unconfirmed satellite-only detection
+        L.circleMarker([f.lat,f.lng],{radius:Math.max(5,Math.min(11,4+(f.frp||0)/25)),
+          color:f.upwind?'#e0902e':'#e2543b',weight:2,fillOpacity:0})
+         .bindPopup(`<b>Satellite detection</b><br>${Math.round(f.dist)} km · ${f.acq_date||''}<br>FRP ${(f.frp||0).toFixed(0)} MW · ${f.pixelCount} pixel${f.pixelCount>1?'s':''}${f.upwind?'<br><b style="color:#e0902e">upwind direction</b>':''}`)
+         .addTo(fireLayer);
+      } else {
+        const r=Math.max(5,Math.min(12,4+(f.size)/30));
+        L.circleMarker([f.lat,f.lng],{radius:r,color:'#0e1115',weight:1.5,fillColor:col,fillOpacity:.85})
+         .bindPopup(`<b>${f.location||f.concelho||'Fire'}</b><br>${Math.round(f.dist)} km · ${f.status||''}<br>${f.man||0} crew · ${f.aerial||0} air${f.upwind?'<br><b style="color:#e0902e">upwind</b>':''}${f.satStatus==='confirmed'?'<br><b style="color:#5fb6c9">satellite-confirmed</b>':''}`)
+         .addTo(fireLayer);
+        if(f.satStatus==='confirmed'){
+          // dashed ring to denote FIRMS confirmation
+          L.circleMarker([f.lat,f.lng],{radius:r+4,color:'#5fb6c9',weight:1.5,fillOpacity:0,dashArray:'3 4'}).addTo(fireLayer);
+        }
+      }
+    });
+
+    // ---- FIRE LIST ----
     const wrap=$('#firesList'); wrap.innerHTML='';
-    const active=enriched.filter(f=>f.sf>=0.55);
-    $('#firesMeta').textContent=`${enriched.length} active · fogos.pt`;
-    if(!enriched.length){
+    const active=all.filter(f=>f.sf>=0.55);
+    const fogosCount=enrichedFogos.length, firmsCount=firmsOnly.length;
+    $('#firesMeta').textContent=`${fogosCount} fogos.pt${firmsCount?' · '+firmsCount+' satellite':''}`;
+
+    if(!all.length){
       wrap.innerHTML=`<div class="empty"><div class="big">No active fires listed</div>fogos.pt reports no incidents anywhere in Portugal right now — the calmest reading.</div>`;
     } else {
-      enriched.slice(0,8).forEach(f=>{
+      all.slice(0,8).forEach(f=>{
         const el=document.createElement('div'); el.className='fire'+(f.sf<=0.3?' winding':'');
         const near=f.dist<10?'#e2543b':f.dist<25?'#e0902e':f.dist<50?'#c9b23e':'#8b96a3';
-        el.innerHTML=`<div class="fdist" style="color:${near}">${Math.round(f.dist)}<small>KM</small></div>
-          <div><div class="floc">${f.location||f.freguesia||f.concelho||'Unnamed location'}</div>
-            <div class="fmeta"><span>${f.concelho||''}</span><span>👤 ${f.man||0}</span><span>🚒 ${f.terrain||0}</span><span>🚁 ${f.aerial||0}</span>${f.hour?`<span>${f.hour}</span>`:''}</div></div>
-          <div class="fstatus ${f.upwind?'upwind':''}">${f.upwind?'upwind · ':''}${(f.status||'active')}</div>`;
+        const satBadge=f.satStatus==='confirmed'?'<span class="sat-badge confirmed">sat ✦</span>':f.source==='firms'?'<span class="sat-badge unconfirmed">sat detect</span>':'';
+        if(f.source==='firms'){
+          el.innerHTML=`<div class="fdist" style="color:${near}">${Math.round(f.dist)}<small>KM</small></div>
+            <div><div class="floc">Satellite detection ${satBadge}</div>
+              <div class="fmeta"><span>${f.acq_date||''}</span><span>FRP ${(f.frp||0).toFixed(0)} MW</span>${f.pixelCount>1?`<span>${f.pixelCount} pixels</span>`:''}</div></div>
+            <div class="fstatus ${f.upwind?'upwind':''}">${f.upwind?'upwind · ':''}unconfirmed</div>`;
+        } else {
+          el.innerHTML=`<div class="fdist" style="color:${near}">${Math.round(f.dist)}<small>KM</small></div>
+            <div><div class="floc">${f.location||f.freguesia||f.concelho||'Unnamed location'} ${satBadge}</div>
+              <div class="fmeta"><span>${f.concelho||''}</span><span>👤 ${f.man||0}</span><span>🚒 ${f.terrain||0}</span><span>🚁 ${f.aerial||0}</span>${f.hour?`<span>${f.hour}</span>`:''}</div></div>
+            <div class="fstatus ${f.upwind?'upwind':''}">${f.upwind?'upwind · ':''}${(f.status||'active')}</div>`;
+        }
         wrap.appendChild(el);
       });
     }
 
-    // proximity threat level from the single highest-threat *active* fire
+    // proximity threat level: highest-threat active fire drives the read
     const head=active[0];
     let proxLevel=0,proxText='—',proxDesc='',proxHex='#3fae7a',nearestKm=null;
-    if(!enriched.length){ proxText='None active'; proxDesc='no fires anywhere in PT'; }
+    if(!all.length){ proxText='None active'; proxDesc='no fires anywhere in PT'; }
     else if(!head){ proxText='Only winding down'; proxDesc='nearby fires in resolution/closure'; proxHex='#3fae7a';
-      nearestKm=Math.round(enriched[0].dist); }
+      nearestKm=Math.round(all[0].dist); }
     else {
       nearestKm=Math.round(head.dist); proxText=nearestKm+' km away';
-      proxDesc=(head.location||head.concelho||'nearest active')+(head.upwind?' · upwind':'');
+      proxDesc=(head.source==='firms'?'satellite detect':head.location||head.concelho||'nearest active')+(head.upwind?' · upwind':'');
       if(head.dist<10)proxLevel=3,proxHex='#e2543b';
       else if(head.dist<25)proxLevel=2,proxHex='#e0902e';
       else if(head.dist<50)proxLevel=1,proxHex='#c9b23e';
       else proxLevel=0,proxHex='#3fae7a';
-      if(head.sf<=0.55)proxLevel=Math.max(0,proxLevel-1);          // resolving fire counts less
+      if(head.sf<=0.55)proxLevel=Math.max(0,proxLevel-1);                                   // resolving fire counts less
       if(head.upwind&&head.dist<40&&head.sf>=0.55)proxLevel=Math.min(3,proxLevel+1);
+      if(head.source==='firms')proxLevel=Math.max(0,proxLevel-1);                           // unconfirmed satellite: one step below confirmed
     }
     $('#proxVal').textContent=proxText; $('#proxDesc').textContent=proxDesc; $('#proxDot').style.background=proxHex;
     return {proxLevel,proxText,nearestKm,headUpwind:head?head.upwind:false,headDist:head?head.dist:null};
@@ -708,9 +807,18 @@
     catch(e){ $('#nowWx').textContent='weather feed unavailable'; $('#wxVal').textContent='no data'; $('#droughtLine').textContent='Drought memory unavailable (weather feed).'; }
     try{ airR=renderAir(await getAir()); }
     catch(e){ $('#aqRow').innerHTML='<div class="aq"><div class="ak">Air quality</div><div class="av">—</div><div class="au">feed unavailable</div></div>'; $('#smokeVal').textContent='no data'; }
-    try{ fireR=renderFires(await getFires()); }
-    catch(e){ $('#firesList').innerHTML=`<div class="errline">Couldn't reach the fogos.pt feed from here. Map rings and weather still work — open <a href="https://fogos.pt/?lat=${HOTEL.lat}&lng=${HOTEL.lng}&zoom=10" target="_blank" rel="noopener">fogos.pt&#8202;↗</a> for the live fire map.</div>`;
-      $('#proxVal').textContent='feed blocked'; $('#proxDesc').textContent='open fogos.pt directly'; }
+    { // fires: fogos + optional FIRMS in parallel
+      const [fogosRes,firmsRes]=await Promise.allSettled([
+        getFires(),
+        (CONFIG.sources.firms&&CONFIG.firmsMapKey)?getFirms():Promise.resolve([])
+      ]);
+      const firmsClusters=firmsRes.status==='fulfilled'?clusterFirms(firmsRes.value):[];
+      try{
+        if(fogosRes.status!=='fulfilled')throw fogosRes.reason;
+        fireR=renderFires(fogosRes.value,firmsClusters);
+      }catch(e){ $('#firesList').innerHTML=`<div class="errline">Couldn't reach the fogos.pt feed from here. Map rings and weather still work — open <a href="https://fogos.pt/?lat=${HOTEL.lat}&lng=${HOTEL.lng}&zoom=10" target="_blank" rel="noopener">fogos.pt&#8202;↗</a> for the live fire map.</div>`;
+        $('#proxVal').textContent='feed blocked'; $('#proxDesc').textContent='open fogos.pt directly'; }
+    }
     const v=setVerdict(wxR,fireR,airR);
     const hist=recordSnapshot({nearestKm:fireR.nearestKm,peakScore:wxR.peakScore,verdict:v.lvl,smokePm:airR.pm});
     renderTrend(hist);
