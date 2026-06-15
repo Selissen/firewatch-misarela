@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Misárela Fire Watch</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --granite:#13161a; --granite-2:#181c22; --panel:#1d232b; --panel-2:#222a33;
+    --line:#2c343f; --line-bright:#3a4654; --mist:#c9d1da; --mist-dim:#8b96a3; --mist-faint:#626d7a;
+    --river:#5fb6c9; --clear:#3fae7a; --monitor:#c9b23e; --caution:#e0902e; --high:#e2543b;
+    --ember-glow:rgba(226,84,59,.14);
+    --display:'Space Grotesk',system-ui,sans-serif; --body:'Inter',system-ui,sans-serif; --mono:'JetBrains Mono',ui-monospace,monospace;
+  }
+  *{box-sizing:border-box} html,body{margin:0}
+  body{background:radial-gradient(1200px 600px at 80% -10%, #1b2027 0%, transparent 60%), var(--granite);
+    color:var(--mist);font-family:var(--body);-webkit-font-smoothing:antialiased;line-height:1.5}
+  a{color:var(--river);text-decoration:none} a:hover{text-decoration:underline}
+  .wrap{max-width:1180px;margin:0 auto;padding:26px 20px 60px}
+
+  /* masthead */
+  .mast{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:18px;border-bottom:1px solid var(--line);padding-bottom:18px}
+  .brandrow{display:flex;align-items:center;gap:13px}
+  .glyph{flex:0 0 auto;width:42px;height:42px}
+  .eyebrow{font-family:var(--mono);font-size:11px;letter-spacing:.28em;text-transform:uppercase;color:var(--mist-faint);margin:0 0 4px}
+  h1{font-family:var(--display);font-weight:600;font-size:clamp(26px,4vw,38px);margin:0;letter-spacing:-.01em;line-height:1}
+  .sub{font-size:13.5px;color:var(--mist-dim);margin:7px 0 0;max-width:46ch} .sub a{color:var(--mist)}
+  .coordchip{font-family:var(--mono);font-size:11.5px;color:var(--mist-dim)}
+  details.loc{margin-top:8px}
+  details.loc summary{font-family:var(--mono);font-size:10.5px;color:var(--mist-faint);cursor:pointer;letter-spacing:.06em}
+  .locgrid{display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap}
+  .locgrid input{width:96px}
+
+  .panelbox{text-align:right;font-family:var(--mono);font-size:12px;color:var(--mist-dim);display:flex;flex-direction:column;gap:12px;align-items:flex-end}
+  .field label{display:block;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--mist-faint);margin-bottom:5px}
+  .row{display:flex;gap:6px;align-items:center;justify-content:flex-end}
+  input[type=date],input[type=number]{background:var(--panel);border:1px solid var(--line-bright);color:var(--mist);font-family:var(--mono);font-size:12px;border-radius:7px;padding:6px 8px;color-scheme:dark}
+  .count{font-size:11.5px;color:var(--mist-faint)} .count b{color:var(--river);font-weight:700}
+  .decide{font-size:11px;color:var(--mist-faint)} .decide b{color:var(--mist);font-weight:600}
+  .decide.warn b{color:var(--caution)}
+
+  /* seasonal strip */
+  .season{margin-top:14px;display:flex;align-items:center;gap:11px;font-size:12.5px;color:var(--mist-dim);
+    background:var(--granite-2);border:1px solid var(--line);border-radius:10px;padding:9px 14px}
+  .season .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.16em;text-transform:uppercase;padding:3px 8px;border-radius:20px;border:1px solid var(--line-bright);color:var(--mist-faint);white-space:nowrap}
+  .season b{color:var(--mist);font-weight:600}
+
+  /* verdict */
+  .verdict{margin-top:16px;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:linear-gradient(180deg,var(--panel) 0%,var(--granite-2) 100%);position:relative}
+  .verdict::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(700px 240px at 12% 0%, var(--vglow,transparent) 0%, transparent 70%);transition:background .5s}
+  .vgrid{display:grid;grid-template-columns:230px 1fr;position:relative}
+  .dial{padding:26px 24px;border-right:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;min-height:210px}
+  .ring{position:relative;width:150px;height:150px} .ring svg{transform:rotate(-90deg)}
+  .ring .lvl{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center}
+  .ring .lvl .word{font-family:var(--display);font-weight:700;font-size:19px;line-height:1.05}
+  .ring .lvl .tag{font-family:var(--mono);font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--mist-faint);margin-top:5px}
+  .dialnote{font-family:var(--mono);font-size:10px;color:var(--mist-faint);text-align:center}
+  .vbody{padding:24px 26px;display:flex;flex-direction:column;gap:15px}
+  .vbody h2{font-family:var(--display);font-weight:500;font-size:17px;margin:0;color:var(--mist)}
+  .vsummary{font-size:14.5px;color:var(--mist);margin:0;max-width:64ch}
+  .blendline{font-family:var(--mono);font-size:11px;color:var(--mist-faint)}
+  .blendbar{display:inline-flex;height:7px;width:150px;border-radius:4px;overflow:hidden;vertical-align:middle;margin:0 7px;border:1px solid var(--line)}
+  .blendbar i{display:block;height:100%} .bb-fc{background:var(--river)} .bb-now{background:var(--caution)}
+  .drivers{display:flex;flex-wrap:wrap;gap:10px}
+  .driver{flex:1 1 200px;background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:12px 14px}
+  .driver .dk{font-family:var(--mono);font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mist-faint);margin-bottom:6px;display:flex;align-items:center;gap:7px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--mist-faint);flex:0 0 auto}
+  .driver .dv{font-family:var(--display);font-size:15px;font-weight:600;color:var(--mist)}
+  .driver .dd{font-size:12px;color:var(--mist-dim);margin-top:3px}
+  .updated{display:flex;align-items:center;gap:14px;flex-wrap:wrap;font-family:var(--mono);font-size:11px;color:var(--mist-faint);border-top:1px solid var(--line);padding:11px 26px;position:relative}
+  .pulse{width:8px;height:8px;border-radius:50%;background:var(--clear);animation:pulse 2.4s infinite}
+  @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(63,174,122,.45)}70%{box-shadow:0 0 0 9px rgba(63,174,122,0)}100%{box-shadow:0 0 0 0 rgba(63,174,122,0)}}
+  .btn{font-family:var(--mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;background:var(--panel-2);border:1px solid var(--line-bright);color:var(--mist);border-radius:7px;padding:6px 12px}
+  .btn:hover{border-color:var(--river);color:#fff} .btn:disabled{opacity:.5;cursor:wait}
+  .toggle{display:inline-flex;align-items:center;gap:7px;cursor:pointer;user-select:none} .toggle input{accent-color:var(--river)}
+  .spacer{flex:1}
+
+  /* trend */
+  .trend{margin-top:18px;display:grid;grid-template-columns:1fr 240px;gap:0;border:1px solid var(--line);border-radius:14px;background:var(--panel);overflow:hidden}
+  .trend .tl{padding:16px 18px}
+  .trend h3{font-family:var(--display);font-weight:500;font-size:15px;margin:0 0 12px}
+  .chips{display:flex;flex-wrap:wrap;gap:10px}
+  .chip{background:var(--panel-2);border:1px solid var(--line);border-radius:10px;padding:10px 13px;font-size:12px;min-width:150px}
+  .chip .ck{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mist-faint)}
+  .chip .cv{font-family:var(--display);font-size:16px;font-weight:600;margin-top:4px;display:flex;align-items:center;gap:8px}
+  .arrow{font-family:var(--mono);font-size:12px;font-weight:700}
+  .a-up{color:var(--high)} .a-down{color:var(--clear)} .a-flat{color:var(--mist-faint)}
+  .chip .cd{font-size:11px;color:var(--mist-faint);margin-top:2px}
+  .spark{border-left:1px solid var(--line);padding:16px 18px;display:flex;flex-direction:column;justify-content:center;gap:8px}
+  .spark .sk{font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--mist-faint)}
+  .sparkmini{font-family:var(--mono);font-size:10.5px;color:var(--mist-dim)}
+  .trendreset{font-family:var(--mono);font-size:10px;color:var(--mist-faint);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0;margin-top:6px;text-align:left}
+
+  /* map + fires */
+  .grid2{display:grid;grid-template-columns:1.15fr .85fr;gap:18px;margin-top:18px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .card>.hd{display:flex;align-items:baseline;justify-content:space-between;gap:10px;padding:15px 18px 0}
+  .card .hd h3{font-family:var(--display);font-weight:500;font-size:15px;margin:0}
+  .card .hd .meta{font-family:var(--mono);font-size:10.5px;color:var(--mist-faint)}
+  #map{height:430px;margin:13px 0 0;background:#0e1115}
+  .leaflet-container{background:#0e1115;font-family:var(--mono)}
+  .legend{display:flex;flex-wrap:wrap;gap:14px;padding:11px 18px 16px;font-family:var(--mono);font-size:10.5px;color:var(--mist-dim)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .lgline{width:14px;height:0;border-top:2px dashed var(--mist-faint)} .lgdot{width:9px;height:9px;border-radius:50%}
+  .fires{max-height:430px;overflow:auto;padding:6px 0 4px}
+  .fire{display:grid;grid-template-columns:46px 1fr auto;gap:11px;align-items:center;padding:11px 18px;border-top:1px solid var(--line)}
+  .fire:first-child{border-top:none}
+  .fdist{font-family:var(--mono);font-weight:700;font-size:15px;text-align:right;line-height:1}
+  .fdist small{display:block;font-weight:400;font-size:9px;color:var(--mist-faint);letter-spacing:.1em}
+  .floc{font-size:13px;color:var(--mist);font-weight:500}
+  .fmeta{font-family:var(--mono);font-size:10.5px;color:var(--mist-dim);margin-top:3px;display:flex;flex-wrap:wrap;gap:9px}
+  .fstatus{font-family:var(--mono);font-size:9.5px;letter-spacing:.07em;text-transform:uppercase;padding:3px 8px;border-radius:20px;border:1px solid var(--line-bright);white-space:nowrap;text-align:center}
+  .upwind{color:var(--caution);border-color:rgba(224,144,46,.5)}
+  .winding{opacity:.6}
+  .empty{padding:30px 18px;text-align:center;color:var(--mist-dim);font-size:13px}
+  .empty .big{font-family:var(--display);font-size:15px;color:var(--clear);margin-bottom:6px}
+  .errline{padding:14px 18px;font-size:12.5px;color:var(--caution);border-top:1px solid var(--line);font-family:var(--mono)}
+
+  /* weather */
+  .wxwrap{margin-top:18px}
+  .wxhd{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:6px}
+  .wxhd h3{font-family:var(--display);font-weight:500;font-size:16px;margin:0}
+  .wxhd .now{font-family:var(--mono);font-size:11.5px;color:var(--mist-dim)} .wxhd .now b{color:var(--mist);font-weight:500}
+  .droughtline{font-family:var(--mono);font-size:11.5px;color:var(--mist-dim);margin-bottom:12px}
+  .droughtline b{font-weight:600}
+  .days{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+  .day{background:var(--panel);border:1px solid var(--line);border-radius:13px;padding:14px;position:relative;overflow:hidden}
+  .day.instay{border-color:var(--line-bright)}
+  .day .band{position:absolute;left:0;top:0;bottom:0;width:4px}
+  .day .dow{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mist-faint)}
+  .day .date{font-family:var(--display);font-size:18px;font-weight:600;margin:1px 0 10px}
+  .day .stayflag{font-family:var(--mono);font-size:9px;letter-spacing:.12em;color:var(--river);text-transform:uppercase}
+  .fwi{display:flex;align-items:baseline;gap:8px;margin-bottom:11px}
+  .fwi .num{font-family:var(--mono);font-weight:700;font-size:22px;line-height:1}
+  .fwi .lab{font-family:var(--display);font-size:11.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+  .metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px 12px;font-size:11.5px}
+  .metric{display:flex;justify-content:space-between;gap:8px;border-top:1px dotted var(--line);padding-top:5px}
+  .metric .mk{color:var(--mist-faint)} .metric .mv{font-family:var(--mono);color:var(--mist);font-weight:500}
+
+  /* air */
+  .aqrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding:14px 18px 18px}
+  .aq{background:var(--panel-2);border:1px solid var(--line);border-radius:11px;padding:13px 15px}
+  .aq .ak{font-family:var(--mono);font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--mist-faint)}
+  .aq .av{font-family:var(--display);font-size:24px;font-weight:600;margin-top:5px;line-height:1}
+  .aq .au{font-family:var(--mono);font-size:11px;color:var(--mist-dim);margin-top:3px}
+
+  /* methodology / footer */
+  .foot{margin-top:26px;border-top:1px solid var(--line);padding-top:18px;display:grid;grid-template-columns:1fr 1fr;gap:24px}
+  .foot h4{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--mist-faint);margin:0 0 9px}
+  .foot p{font-size:12.5px;color:var(--mist-dim);margin:0 0 9px;max-width:62ch}
+  .thresh{width:100%;border-collapse:collapse;font-size:11.5px;margin:4px 0 10px}
+  .thresh td{border-top:1px solid var(--line);padding:6px 8px;font-family:var(--mono);color:var(--mist-dim);vertical-align:top}
+  .thresh td:first-child{color:var(--mist);white-space:nowrap}
+  .sw{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:baseline}
+  .srclist{display:flex;flex-wrap:wrap;gap:8px}
+  .srclist a{font-family:var(--mono);font-size:11px;background:var(--panel);border:1px solid var(--line);border-radius:20px;padding:5px 11px;color:var(--mist)}
+  .srclist a:hover{border-color:var(--river);text-decoration:none}
+  .disclaimer{margin-top:18px;font-size:11.5px;color:var(--mist-faint);border:1px solid var(--line);border-left:3px solid var(--caution);border-radius:0 9px 9px 0;padding:12px 15px;background:var(--granite-2)}
+  .skel{color:var(--mist-faint);font-family:var(--mono);font-size:12px}
+
+  @media(max-width:860px){
+    .vgrid,.trend,.grid2,.foot{grid-template-columns:1fr}
+    .dial{border-right:none;border-bottom:1px solid var(--line)}
+    .spark{border-left:none;border-top:1px solid var(--line)}
+    .panelbox{text-align:left;align-items:flex-start} .row{justify-content:flex-start}
+    .mast{align-items:flex-start}
+  }
+  @media(prefers-reduced-motion:reduce){.pulse{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="mast">
+    <div>
+      <div class="brandrow">
+        <svg class="glyph" viewBox="0 0 48 48" fill="none" aria-hidden="true">
+          <path d="M4 34c6 0 6-5 12-5s6 5 12 5 6-5 12-5" stroke="var(--river)" stroke-width="2" stroke-linecap="round"/>
+          <path d="M10 34c0-7 4-11 4-11s4 4 4 11" stroke="var(--line-bright)" stroke-width="2" stroke-linecap="round"/>
+          <path d="M30 34c0-9 6-14 6-14s6 5 6 14" stroke="var(--line-bright)" stroke-width="2" stroke-linecap="round"/>
+          <path d="M24 9c1.6 2.2 1 4-.2 5.4-1 1.2-1.4 2.6-.2 4.1.9-.5 1.5-1.3 1.8-2.3.9 1 1.4 2.2 1.2 3.6 2-1.4 2.7-4 .9-7.1C26 10.8 24.7 9.7 24 9Z" fill="var(--high)"/>
+        </svg>
+        <div><p class="eyebrow">Live situation monitor</p><h1>Misárela Fire Watch</h1></div>
+      </div>
+      <p class="sub">Hotel Rural Misárela, Ferral · Montalegre — edge of Peneda-Gerês, beside Ponte da Misárela.
+        <a href="https://www.misarela.com/en" target="_blank" rel="noopener">misarela.com&#8202;↗</a></p>
+      <p class="coordchip" id="coordChip">41.6921° N&nbsp;&nbsp;8.0196° W&nbsp;&nbsp;·&nbsp;&nbsp;river Rabagão gorge</p>
+      <details class="loc">
+        <summary>Adjust location</summary>
+        <div class="locgrid">
+          <input type="number" id="latIn" step="0.0001" value="41.6921">
+          <input type="number" id="lngIn" step="0.0001" value="-8.0196">
+          <button class="btn" id="applyLoc">Set</button>
+          <span style="font-size:10px;color:var(--mist-faint)">if you meant a different spot than Ferral</span>
+        </div>
+      </details>
+    </div>
+    <div class="panelbox">
+      <div class="field">
+        <label>Planned stay</label>
+        <div class="row">
+          <input type="date" id="checkin" value="2026-06-23"><span>→</span><input type="date" id="checkout" value="2026-06-27">
+        </div>
+        <div class="count" id="countdown" style="margin-top:6px">—</div>
+      </div>
+      <div class="field">
+        <label>Free-cancellation until</label>
+        <div class="row"><input type="date" id="cancelby"></div>
+        <div class="decide" id="decideLine" style="margin-top:6px">set this to track your decision window</div>
+      </div>
+    </div>
+  </header>
+
+  <div class="season" id="seasonStrip">
+    <span class="tag" id="seasonTag">season</span>
+    <span id="seasonText">—</span>
+  </div>
+
+  <section class="verdict" id="verdict">
+    <div class="vgrid">
+      <div class="dial">
+        <div class="ring">
+          <svg width="150" height="150" viewBox="0 0 150 150">
+            <circle cx="75" cy="75" r="64" fill="none" stroke="var(--line)" stroke-width="11"/>
+            <circle id="ringArc" cx="75" cy="75" r="64" fill="none" stroke="var(--mist-faint)" stroke-width="11" stroke-linecap="round" stroke-dasharray="402" stroke-dashoffset="402" style="transition:stroke-dashoffset .9s ease,stroke .6s"/>
+          </svg>
+          <div class="lvl"><div class="word" id="verdictWord">Reading…</div><div class="tag" id="verdictTag">stay window</div></div>
+        </div>
+        <div class="dialnote">synthesized signal · not official</div>
+      </div>
+      <div class="vbody">
+        <h2 id="verdictHead">Pulling the latest readings…</h2>
+        <p class="vsummary" id="verdictSummary">Contacting weather and fire feeds for the Gerês area.</p>
+        <div class="blendline" id="blendLine"></div>
+        <div class="drivers">
+          <div class="driver">
+            <div class="dk"><span class="dot" id="proxDot"></span>Nearest threat — now</div>
+            <div class="dv" id="proxVal">—</div><div class="dd" id="proxDesc">live incidents · size &amp; status weighted</div>
+          </div>
+          <div class="driver">
+            <div class="dk"><span class="dot" id="wxDot"></span>Fire weather — your dates</div>
+            <div class="dv" id="wxVal">—</div><div class="dd" id="wxDesc">heat · dryness · wind · drought memory</div>
+          </div>
+          <div class="driver">
+            <div class="dk"><span class="dot" id="smokeDot"></span>Air &amp; smoke — now</div>
+            <div class="dv" id="smokeVal">—</div><div class="dd" id="smokeDesc">fine-particle load (PM2.5)</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="updated">
+      <span class="pulse" id="pulse"></span><span id="updatedAt">Loading…</span>
+      <span class="spacer"></span>
+      <label class="toggle"><input type="checkbox" id="autoref" checked> auto-refresh 10&#8202;min</label>
+      <button class="btn" id="refreshBtn">Refresh now</button>
+    </div>
+  </section>
+
+  <section class="trend" id="trendCard">
+    <div class="tl">
+      <h3>Trend since you started watching</h3>
+      <div class="chips" id="trendChips"><div class="chip skel">Builds as you check back on different days.</div></div>
+      <button class="trendreset" id="resetTrend">reset trend history</button>
+    </div>
+    <div class="spark">
+      <div class="sk">Fire-weather peak · your dates</div>
+      <div id="sparkBox"><svg width="200" height="44"></svg></div>
+      <div class="sparkmini" id="sparkMini">—</div>
+    </div>
+  </section>
+
+  <div class="grid2">
+    <div class="card">
+      <div class="hd"><h3>Proximity map</h3><span class="meta" id="mapMeta">rings at 10 · 25 · 50 km</span></div>
+      <div id="map"></div>
+      <div class="legend">
+        <span><span class="lgdot" style="background:var(--river)"></span>hotel</span>
+        <span><span class="lgdot" style="background:var(--high)"></span>active fire</span>
+        <span><span class="lgdot" style="background:var(--caution)"></span>upwind of hotel</span>
+        <span><span class="lgline"></span>distance rings</span>
+      </div>
+    </div>
+    <div class="card">
+      <div class="hd"><h3>Active fires by threat</h3><span class="meta" id="firesMeta">live · fogos.pt</span></div>
+      <div class="fires" id="firesList"><div class="empty skel">Loading active incidents…</div></div>
+    </div>
+  </div>
+
+  <section class="wxwrap">
+    <div class="wxhd"><h3>Fire-weather outlook</h3><div class="now" id="nowWx">current conditions loading…</div></div>
+    <div class="droughtline" id="droughtLine"></div>
+    <div class="days" id="days"><div class="day skel">Loading forecast…</div></div>
+  </section>
+
+  <div class="card" style="margin-top:18px">
+    <div class="hd"><h3>Air &amp; smoke right now</h3><span class="meta">Open-Meteo air quality</span></div>
+    <div class="aqrow" id="aqRow"><div class="aq skel">Loading…</div></div>
+  </div>
+
+  <div class="foot">
+    <div>
+      <h4>How the signal is built</h4>
+      <p>Two reads are blended by <b>how far off your trip is</b>. Far out, the forecast for your dates leads and live fires are treated as "how volatile is this corridor." As check-in nears, live proximity and smoke take over — a fire on the doorstep the day before matters more than any forecast.</p>
+      <table class="thresh">
+        <tr><td><span class="sw" style="background:var(--clear)"></span>Clear</td><td>no near fire of concern · fire weather Low–Moderate on your dates</td></tr>
+        <tr><td><span class="sw" style="background:var(--monitor)"></span>Monitor</td><td>active fire within ~50 km, or High fire weather on a stay day</td></tr>
+        <tr><td><span class="sw" style="background:var(--caution)"></span>Caution</td><td>active fire within ~25 km, or Very-high fire weather, or upwind fire</td></tr>
+        <tr><td><span class="sw" style="background:var(--high)"></span>High concern</td><td>significant active fire within ~10 km / upwind, or Extreme fire weather</td></tr>
+      </table>
+      <p><b>Fire weather</b> (0–100, indicative) rises with heat, low humidity and wind, falls with rain, and is scaled by <b>drought memory</b> — the last 30 days of rainfall at this point. <b>Threat ranking</b> weights each fire by distance, size (crew &amp; aircraft committed), upwind position and lifecycle status, so a large fire winding down counts less than a small one taking hold nearby.</p>
+    </div>
+    <div>
+      <h4>The realistic risk for a guest</h4>
+      <p>The hotel burning is unlikely; the practical disruptions are <b>smoke</b>, a <b>precautionary evacuation</b>, or the <b>access road (CM1397) being cut</b> — any of which can happen without the fire reaching you. Treat a close upwind fire as a reason to call the hotel about access, not just to read the map.</p>
+      <h4 style="margin-top:14px">Cross-check official sources</h4>
+      <div class="srclist">
+        <a href="https://fogos.pt/?lat=41.6921&lng=-8.0196&zoom=10" target="_blank" rel="noopener">fogos.pt map ↗</a>
+        <a href="https://www.ipma.pt/en/riscoincendio/rcm.pt/" target="_blank" rel="noopener">IPMA fire risk ↗</a>
+        <a href="https://forest-fire.emergency.copernicus.eu/apps/effis_current_situation/" target="_blank" rel="noopener">EFFIS Europe ↗</a>
+        <a href="https://prociv.gov.pt/" target="_blank" rel="noopener">ANEPC ↗</a>
+        <a href="https://www.windy.com/?41.692,-8.020,9" target="_blank" rel="noopener">Windy ↗</a>
+        <a href="https://www.misarela.com/en/contacts" target="_blank" rel="noopener">Call the hotel ↗</a>
+      </div>
+      <div class="disclaimer">A personal monitoring aid, not an emergency service. Feeds can be incomplete or delayed, distance is straight-line (terrain matters in this gorge), and the index is a heuristic. For any real safety decision follow 112 / ANEPC and the hotel.</div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>
+<script>
+(function(){
+  "use strict";
+  let HOTEL = { lat:41.6921, lng:-8.0196 };
+  const LEVELS = {
+    0:{word:"Clear",color:"var(--clear)",hex:"#3fae7a"},
+    1:{word:"Monitor",color:"var(--monitor)",hex:"#c9b23e"},
+    2:{word:"Caution",color:"var(--caution)",hex:"#e0902e"},
+    3:{word:"High concern",color:"var(--high)",hex:"#e2543b"}
+  };
+  const FW_BANDS=[
+    {max:20,label:"Low",hex:"#3fae7a"},{max:40,label:"Moderate",hex:"#c9b23e"},
+    {max:60,label:"High",hex:"#e0902e"},{max:80,label:"Very high",hex:"#d96a2e"},{max:101,label:"Extreme",hex:"#e2543b"}
+  ];
+  const LS='mfw_';
+  const $=s=>document.querySelector(s);
+  const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+  const toRad=d=>d*Math.PI/180;
+  const compassWords=["N","NE","E","SE","S","SW","W","NW"];
+  const compass=d=>compassWords[Math.round(((d%360)/45))%8];
+  const fmtDate=d=>d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+  const dParse=s=>{const p=s.split('-');return new Date(+p[0],+p[1]-1,+p[2]);};
+  const todayMid=()=>{const t=new Date();t.setHours(0,0,0,0);return t;};
+  const dayKey=d=>d.toISOString().slice(0,10);
+  function lsGet(k){try{return JSON.parse(localStorage.getItem(LS+k));}catch(e){return null;}}
+  function lsSet(k,v){try{localStorage.setItem(LS+k,JSON.stringify(v));}catch(e){}}
+
+  function haversine(a,b){const R=6371,dLat=toRad(b.lat-a.lat),dLng=toRad(b.lng-a.lng);
+    const s=Math.sin(dLat/2)**2+Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*Math.sin(dLng/2)**2;
+    return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));}
+  function bearing(from,to){const y=Math.sin(toRad(to.lng-from.lng))*Math.cos(toRad(to.lat));
+    const x=Math.cos(toRad(from.lat))*Math.sin(toRad(to.lat))-Math.sin(toRad(from.lat))*Math.cos(toRad(to.lat))*Math.cos(toRad(to.lng-from.lng));
+    return (Math.atan2(y,x)*180/Math.PI+360)%360;}
+  function bandOf(s){for(const b of FW_BANDS){if(s<b.max)return b;}return FW_BANDS[FW_BANDS.length-1];}
+
+  // fire-weather with drought multiplier; honest if RH missing
+  function fireWeather(tmax,rhmin,windmax,precip,droughtMult){
+    const t=clamp((tmax-15)/25,0,1), w=clamp((windmax-5)/45,0,1), p=clamp(precip/10,0,1);
+    let base;
+    if(rhmin==null){ base=(0.46*t+0.54*w)*(1-0.6*p); }
+    else { const h=clamp((60-rhmin)/50,0,1); base=(0.30*t+0.34*h+0.30*w)*(1-0.6*p); }
+    return Math.round(clamp(base*droughtMult,0,1)*100);
+  }
+  function statusFactor(status){
+    const s=(status||'').toLowerCase();
+    if(s.includes('vigil'))return 0.15;
+    if(s.includes('encerr')||s.includes('extint'))return 0.05;
+    if(s.includes('conclus'))return 0.3;
+    if(s.includes('resolu'))return 0.55;
+    if(s.includes('curso')||s.includes('despacho')||s.includes('chegada')||s.includes('refor')||s.includes('curso'))return 1.0;
+    return 0.8;
+  }
+
+  // ---- MAP ----
+  let map,fireLayer,hotelMarker,ringLayer;
+  function initMap(){
+    map=L.map('map',{zoomControl:true,attributionControl:true,scrollWheelZoom:false}).setView([HOTEL.lat,HOTEL.lng],9);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18,subdomains:'abcd',attribution:'&copy; OpenStreetMap &copy; CARTO'}).addTo(map);
+    ringLayer=L.layerGroup().addTo(map); fireLayer=L.layerGroup().addTo(map);
+    drawHotel();
+  }
+  function drawHotel(){
+    ringLayer.clearLayers();
+    [50,25,10].forEach(km=>L.circle([HOTEL.lat,HOTEL.lng],{radius:km*1000,color:'#3a4654',weight:1,dashArray:'4 6',fill:false}).addTo(ringLayer));
+    if(hotelMarker)hotelMarker.remove();
+    hotelMarker=L.circleMarker([HOTEL.lat,HOTEL.lng],{radius:7,color:'#0e1115',weight:2,fillColor:'#5fb6c9',fillOpacity:1}).addTo(map);
+    hotelMarker.bindPopup('<b>Hotel Rural Misárela</b><br>'+HOTEL.lat.toFixed(4)+', '+HOTEL.lng.toFixed(4));
+    map.setView([HOTEL.lat,HOTEL.lng],9);
+  }
+
+  // ---- FETCH ----
+  async function getWeather(){
+    const u=`https://api.open-meteo.com/v1/forecast?latitude=${HOTEL.lat}&longitude=${HOTEL.lng}`
+      +`&current=temperature_2m,relative_humidity_2m,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation`
+      +`&hourly=relative_humidity_2m`
+      +`&daily=temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant`
+      +`&timezone=Europe%2FLisbon&past_days=31&forecast_days=16`;
+    const r=await fetch(u); if(!r.ok)throw new Error('weather '+r.status); return r.json();
+  }
+  async function getAir(){
+    const u=`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${HOTEL.lat}&longitude=${HOTEL.lng}`
+      +`&current=pm2_5,pm10,european_aqi&timezone=Europe%2FLisbon`;
+    const r=await fetch(u); if(!r.ok)throw new Error('air '+r.status); return r.json();
+  }
+  async function getFires(){
+    const r=await fetch('https://api.fogos.pt/v2/incidents/active'); if(!r.ok)throw new Error('fires '+r.status); return r.json();
+  }
+  function dailyHumidityMin(hourly,dateStr){
+    if(!hourly||!hourly.time)return null; let mn=999;
+    for(let i=0;i<hourly.time.length;i++){if(hourly.time[i].startsWith(dateStr)){const v=hourly.relative_humidity_2m[i];if(v!=null&&v<mn)mn=v;}}
+    return mn===999?null:mn;
+  }
+
+  // ---- RENDER WEATHER ----
+  let lastWeather=null, lastDrought={mult:1,rain30:null,label:'unknown'};
+  function computeDrought(d){
+    if(!d||!d.time)return {mult:1,rain30:null,label:'unknown'};
+    const tk=dayKey(todayMid()); let rain=0,n=0;
+    for(let i=0;i<d.time.length;i++){ if(d.time[i]<tk){ rain+=(d.precipitation_sum[i]||0); n++; } }
+    if(n===0)return {mult:1,rain30:null,label:'unknown'};
+    const mult=clamp(1.3-(rain/60)*0.55,0.75,1.3);
+    const label=rain<10?'high':rain<30?'moderate':'low';
+    return {mult,rain30:rain,label};
+  }
+  function renderWeather(wx){
+    lastWeather=wx; const c=wx.current;
+    $('#nowWx').innerHTML=`now <b>${Math.round(c.temperature_2m)}°C</b> · humidity <b>${Math.round(c.relative_humidity_2m)}%</b> · `
+      +`wind <b>${Math.round(c.wind_speed_10m)}</b> g${Math.round(c.wind_gusts_10m)} km/h <b>${compass(c.wind_direction_10m)}</b>`
+      +(c.precipitation>0?` · rain ${c.precipitation} mm`:``);
+
+    const dr=computeDrought(wx.daily); lastDrought=dr;
+    $('#droughtLine').innerHTML = dr.rain30==null ? `Drought memory unavailable.`
+      : `Drought memory · <b style="color:${dr.label==='high'?'#e2543b':dr.label==='moderate'?'#e0902e':'#3fae7a'}">${dr.label} dryness</b> — ${Math.round(dr.rain30)} mm of rain in the last 30 days (scales the index ×${dr.mult.toFixed(2)}).`;
+
+    const d=wx.daily, ci=dParse($('#checkin').value), co=dParse($('#checkout').value);
+    const days=$('#days'); days.innerHTML=''; const stay=[]; const tk=dayKey(todayMid());
+    for(let i=0;i<d.time.length;i++){
+      if(d.time[i]<tk) continue; // skip past days in the strip
+      const dateObj=dParse(d.time[i]);
+      const inStay=dateObj>=ci && dateObj<co;
+      const rhmin=dailyHumidityMin(wx.hourly,d.time[i]);
+      const score=fireWeather(d.temperature_2m_max[i],rhmin,d.wind_speed_10m_max[i],d.precipitation_sum[i],dr.mult);
+      const band=bandOf(score);
+      if(inStay)stay.push({score,band,date:dateObj});
+      const shownIdx=days.children.length;
+      if(shownIdx>11 && !inStay) continue;
+      const el=document.createElement('div'); el.className='day'+(inStay?' instay':'');
+      el.innerHTML=`<div class="band" style="background:${band.hex}"></div>
+        <div class="dow">${dateObj.toLocaleDateString('en-GB',{weekday:'short'})}${inStay?' <span class="stayflag">• stay</span>':''}</div>
+        <div class="date">${fmtDate(dateObj)}</div>
+        <div class="fwi"><span class="num" style="color:${band.hex}">${score}</span><span class="lab" style="color:${band.hex}">${band.label}</span></div>
+        <div class="metrics">
+          <div class="metric"><span class="mk">High</span><span class="mv">${Math.round(d.temperature_2m_max[i])}°</span></div>
+          <div class="metric"><span class="mk">Min RH</span><span class="mv">${rhmin==null?'—':Math.round(rhmin)+'%'}</span></div>
+          <div class="metric"><span class="mk">Wind</span><span class="mv">${Math.round(d.wind_speed_10m_max[i])} ${compass(d.wind_direction_10m_dominant[i])}</span></div>
+          <div class="metric"><span class="mk">Rain</span><span class="mv">${d.precipitation_sum[i]>0?d.precipitation_sum[i]+'mm':(d.precipitation_probability_max[i]||0)+'%'}</span></div>
+        </div>`;
+      days.appendChild(el);
+    }
+    let wxLevel=0,wxLabel='—',wxHex='#8b96a3',peakScore=null,peakDate=null,inRange=stay.length>0;
+    if(inRange){
+      const worst=stay.reduce((a,b)=>b.score>a.score?b:a);
+      wxLabel=worst.band.label; wxHex=worst.band.hex; peakScore=worst.score; peakDate=worst.date;
+      const idx=FW_BANDS.indexOf(worst.band); wxLevel=idx<=0?0:idx===1?1:idx===2?2:3;
+      $('#wxVal').textContent=worst.band.label+' ('+worst.score+')';
+      $('#wxDesc').textContent='peak over your stay · '+fmtDate(worst.date);
+    } else { $('#wxVal').textContent='outside 16-day range'; $('#wxDesc').textContent='check back closer to your dates'; }
+    $('#wxDot').style.background=wxHex;
+    return {wxLevel,wxLabel,wxHex,inRange,peakScore,current:c};
+  }
+
+  // ---- RENDER FIRES (threat ranked) ----
+  function renderFires(json){
+    const list=(json&&json.data)?json.data:[];
+    const wind=lastWeather&&lastWeather.current?lastWeather.current.wind_direction_10m:null;
+    const enriched=list.map(f=>{
+      const lat=parseFloat(f.lat),lng=parseFloat(f.lng);
+      if(isNaN(lat)||isNaN(lng))return null;
+      const dist=haversine(HOTEL,{lat,lng});
+      let upwind=false;
+      if(wind!=null){const brg=bearing({lat,lng},HOTEL);const windToward=(wind+180)%360;
+        let diff=Math.abs(((brg-windToward+540)%360)-180); upwind=diff<55 && dist<60;}
+      const sf=statusFactor(f.status);
+      const size=(f.man||0)+(f.terrain||0)+6*(f.aerial||0);
+      const distF=Math.exp(-dist/18);
+      const threat=distF*(0.6+Math.log10(1+size)/2)*sf*(upwind?1.4:1);
+      return {...f,lat,lng,dist,upwind,sf,size,threat};
+    }).filter(Boolean).sort((a,b)=>b.threat-a.threat);
+
+    fireLayer.clearLayers();
+    enriched.forEach(f=>{
+      const col=f.sf<=0.3?'#7f8a97':f.upwind?'#e0902e':'#e2543b';
+      const m=L.circleMarker([f.lat,f.lng],{radius:Math.max(5,Math.min(12,4+(f.size)/30)),color:'#0e1115',weight:1.5,fillColor:col,fillOpacity:.85});
+      m.bindPopup(`<b>${f.location||f.concelho||'Fire'}</b><br>${Math.round(f.dist)} km · ${f.status||''}<br>${f.man||0} crew · ${f.aerial||0} air${f.upwind?'<br><b style="color:#e0902e">upwind</b>':''}`);
+      m.addTo(fireLayer);
+    });
+
+    const wrap=$('#firesList'); wrap.innerHTML='';
+    const active=enriched.filter(f=>f.sf>=0.55);
+    $('#firesMeta').textContent=`${enriched.length} active · fogos.pt`;
+    if(!enriched.length){
+      wrap.innerHTML=`<div class="empty"><div class="big">No active fires listed</div>fogos.pt reports no incidents anywhere in Portugal right now — the calmest reading.</div>`;
+    } else {
+      enriched.slice(0,8).forEach(f=>{
+        const el=document.createElement('div'); el.className='fire'+(f.sf<=0.3?' winding':'');
+        const near=f.dist<10?'#e2543b':f.dist<25?'#e0902e':f.dist<50?'#c9b23e':'#8b96a3';
+        el.innerHTML=`<div class="fdist" style="color:${near}">${Math.round(f.dist)}<small>KM</small></div>
+          <div><div class="floc">${f.location||f.freguesia||f.concelho||'Unnamed location'}</div>
+            <div class="fmeta"><span>${f.concelho||''}</span><span>👤 ${f.man||0}</span><span>🚒 ${f.terrain||0}</span><span>🚁 ${f.aerial||0}</span>${f.hour?`<span>${f.hour}</span>`:''}</div></div>
+          <div class="fstatus ${f.upwind?'upwind':''}">${f.upwind?'upwind · ':''}${(f.status||'active')}</div>`;
+        wrap.appendChild(el);
+      });
+    }
+
+    // proximity threat level from the single highest-threat *active* fire
+    const head=active[0];
+    let proxLevel=0,proxText='—',proxDesc='',proxHex='#3fae7a',nearestKm=null;
+    if(!enriched.length){ proxText='None active'; proxDesc='no fires anywhere in PT'; }
+    else if(!head){ proxText='Only winding down'; proxDesc='nearby fires in resolution/closure'; proxHex='#3fae7a';
+      nearestKm=Math.round(enriched[0].dist); }
+    else {
+      nearestKm=Math.round(head.dist); proxText=nearestKm+' km away';
+      proxDesc=(head.location||head.concelho||'nearest active')+(head.upwind?' · upwind':'');
+      if(head.dist<10)proxLevel=3,proxHex='#e2543b';
+      else if(head.dist<25)proxLevel=2,proxHex='#e0902e';
+      else if(head.dist<50)proxLevel=1,proxHex='#c9b23e';
+      else proxLevel=0,proxHex='#3fae7a';
+      if(head.sf<=0.55)proxLevel=Math.max(0,proxLevel-1);          // resolving fire counts less
+      if(head.upwind&&head.dist<40&&head.sf>=0.55)proxLevel=Math.min(3,proxLevel+1);
+    }
+    $('#proxVal').textContent=proxText; $('#proxDesc').textContent=proxDesc; $('#proxDot').style.background=proxHex;
+    return {proxLevel,proxText,nearestKm,headUpwind:head?head.upwind:false,headDist:head?head.dist:null};
+  }
+
+  // ---- RENDER AIR ----
+  function renderAir(json){
+    const c=json&&json.current?json.current:{};
+    const pm=c.pm2_5, aqi=c.european_aqi;
+    const row=$('#aqRow'); row.innerHTML='';
+    const aqiBand=aqi==null?{t:'—',h:'#8b96a3'}:aqi<=20?{t:'Good',h:'#3fae7a'}:aqi<=40?{t:'Fair',h:'#9ccb4f'}:aqi<=60?{t:'Moderate',h:'#c9b23e'}:aqi<=80?{t:'Poor',h:'#e0902e'}:aqi<=100?{t:'Very poor',h:'#e2543b'}:{t:'Extremely poor',h:'#a23bd0'};
+    [{k:'PM2.5 (smoke)',v:pm==null?'—':pm.toFixed(0),u:'µg/m³ · fine particles',hex:pm==null?'#c9d1da':pm<10?'#3fae7a':pm<25?'#c9b23e':pm<50?'#e0902e':'#e2543b'},
+     {k:'European AQI',v:aqi==null?'—':Math.round(aqi),u:aqiBand.t,hex:aqiBand.h},
+     {k:'PM10 (dust)',v:c.pm10==null?'—':Math.round(c.pm10),u:'µg/m³',hex:'#c9d1da'}].forEach(cd=>{
+      const el=document.createElement('div'); el.className='aq';
+      el.innerHTML=`<div class="ak">${cd.k}</div><div class="av" style="color:${cd.hex}">${cd.v}</div><div class="au">${cd.u}</div>`;
+      row.appendChild(el);
+    });
+    let smokeLevel=0,smokeTxt='—',smokeHex='#3fae7a';
+    if(pm!=null){smokeTxt=pm<10?'Clean air':pm<25?'Slight haze':pm<50?'Smoky':'Heavy smoke';
+      smokeLevel=pm<10?0:pm<25?1:pm<50?2:3; smokeHex=pm<10?'#3fae7a':pm<25?'#c9b23e':pm<50?'#e0902e':'#e2543b';}
+    $('#smokeVal').textContent=smokeTxt; $('#smokeDot').style.background=smokeHex;
+    return {smokeLevel,pm};
+  }
+
+  // ---- TIME-AWARE VERDICT ----
+  function daysUntilCheckin(){ return Math.round((dParse($('#checkin').value)-todayMid())/86400000); }
+  function proximityWeight(du){
+    if(du<=0)return 0.9;
+    if(du>=8)return 0.2;
+    return clamp(0.85-(du-1)*(0.65/7),0.2,0.85);
+  }
+  function setVerdict(wxR,fireR,airR){
+    const du=daysUntilCheckin();
+    const pw=proximityWeight(du);
+    const forecastLevel = wxR.inRange ? wxR.wxLevel : 0;
+    const nowLevel = Math.max(fireR.proxLevel||0, airR.smokeLevel||0);
+    let combined=(1-pw)*forecastLevel + pw*nowLevel;
+    // guard: significant upwind fire on the doorstep close to arrival
+    if(fireR.proxLevel>=3 && du<=3) combined=Math.max(combined,2.5);
+    const lvl = combined<0.75?0:combined<1.6?1:combined<2.4?2:3;
+    const L=LEVELS[lvl];
+    $('#verdictWord').textContent=L.word; $('#verdictWord').style.color=L.color;
+    const arc=$('#ringArc'); arc.style.strokeDashoffset=402-(402*((lvl+1)/4)); arc.style.stroke=L.color;
+    $('#verdict').style.setProperty('--vglow',lvl>=2?'var(--ember-glow)':'transparent');
+
+    const heads={0:"Conditions look calm for these dates",1:"Worth keeping an eye on — nothing alarming yet",2:"Elevated risk — check daily before you commit",3:"High concern right now — hold off and reassess"};
+    $('#verdictHead').textContent=heads[lvl];
+
+    const fcPct=Math.round((1-pw)*100), nowPct=100-fcPct;
+    $('#blendLine').innerHTML=`Weighting today: forecast ${fcPct}% / live conditions ${nowPct}% `
+      +`<span class="blendbar"><i class="bb-fc" style="width:${fcPct}%"></i><i class="bb-now" style="width:${nowPct}%"></i></span>`
+      +` — check-in ${du>0?'in '+du+' day'+(du===1?'':'s'):du===0?'today':'has begun'}.`;
+
+    const ci=$('#checkin').value, co=$('#checkout').value;
+    let parts=[];
+    parts.push(wxR.inRange
+      ? `For ${fmtDate(dParse(ci))}–${fmtDate(dParse(co))}, the forecast peaks at <b style="color:${wxR.wxHex}">${wxR.wxLabel.toLowerCase()}</b> fire weather${lastDrought.label!=='unknown'?` on ${lastDrought.label} drought`:''}.`
+      : `Your dates are still beyond the 16-day forecast, so this leans on live conditions for now.`);
+    parts.push(fireR.proxText==='None active' ? `No fires are burning anywhere in Portugal at this moment.`
+      : fireR.proxText==='Only winding down' ? `Nearby fires are in resolution or closing out.`
+      : `The closest <i>active</i> fire is <b>${fireR.proxText}</b>${fireR.headUpwind?', and it sits upwind':''}.`);
+    if(du>=6) parts.push(`This far out, today's fires are a read on how volatile the corridor is — not a forecast for your stay. Re-open daily; the outlook firms up inside ~5 days.`);
+    else if(lvl>=2) parts.push(`With arrival close, watch the trend daily and call the hotel about road access if a fire stays upwind.`);
+    else if(lvl===1) parts.push(`A quick daily glance should be enough from here.`);
+    else parts.push(`If it holds, the booking looks comfortable — still worth a final check the day before.`);
+    $('#verdictSummary').innerHTML=parts.join(' ');
+    return {lvl,forecastLevel,nowLevel};
+  }
+
+  // ---- SEASONAL BASELINE ----
+  function setSeasonal(){
+    const m=dParse($('#checkin').value).getMonth(); // 0=Jan
+    let tag,txt;
+    if(m===5){tag="pre-peak";txt="Late June is the shoulder of the season — Portugal's severe fires usually run <b>mid-July to September</b>. Early heat spikes happen, but the statistical peak is still ahead.";}
+    else if(m===6||m===7){tag="peak";txt="July–August is the <b>peak fire window</b> in northern Portugal — the highest-risk weeks of the year.";}
+    else if(m===8){tag="peak";txt="September is still within peak season; risk typically eases later in the month.";}
+    else if(m===9){tag="tail";txt="October usually sees the season winding down, though dry, warm spells can still flare up.";}
+    else if(m===4){tag="ramp-up";txt="May is the season ramping up; risk is usually still moderate inland.";}
+    else {tag="low season";txt="This is outside the main fire season; risk is generally low.";}
+    $('#seasonTag').textContent=tag; $('#seasonText').innerHTML=txt;
+  }
+
+  // ---- DECISION WINDOW ----
+  function setDecideLine(){
+    const v=$('#cancelby').value;
+    if(!v){ $('#decideLine').textContent='set this to track your decision window'; $('#decideLine').className='decide'; return; }
+    lsSet('cancelby',v);
+    const left=Math.round((dParse(v)-todayMid())/86400000);
+    const el=$('#decideLine');
+    if(left>1){el.innerHTML=`<b>${left} days</b> to decide · free cancel until ${fmtDate(dParse(v))}`; el.className='decide';}
+    else if(left===1){el.innerHTML=`<b>1 day</b> left — refund window closes tomorrow`; el.className='decide warn';}
+    else if(left===0){el.innerHTML=`<b>Closes today</b> — last day for a free cancel`; el.className='decide warn';}
+    else {el.innerHTML=`Refund window closed ${fmtDate(dParse(v))}`; el.className='decide warn';}
+  }
+
+  // ---- TREND (localStorage) ----
+  function recordSnapshot(s){
+    let hist=lsGet('hist')||[];
+    const k=dayKey(todayMid());
+    const idx=hist.findIndex(h=>h.day===k);
+    const snap={day:k,nearestKm:s.nearestKm,peakScore:s.peakScore,verdict:s.verdict,smokePm:s.smokePm};
+    if(idx>=0)hist[idx]=snap; else hist.push(snap);
+    hist=hist.slice(-30); lsSet('hist',hist); return hist;
+  }
+  function arrow(now,prev,goodIsDown){
+    if(prev==null||now==null)return {c:'a-flat',s:'·'};
+    if(now===prev)return {c:'a-flat',s:'→'};
+    const worse = goodIsDown ? now>prev : now<prev;
+    const up = now>prev;
+    return {c:worse?'a-up':'a-down', s:up?'▲':'▼'};
+  }
+  function renderTrend(hist){
+    const chips=$('#trendChips');
+    if(!hist||hist.length<1){chips.innerHTML='<div class="chip skel">Builds as you check back on different days.</div>'; drawSpark([]); return;}
+    const cur=hist[hist.length-1];
+    const prev=hist.length>=2?hist[hist.length-2]:null;
+    const aKm=arrow(cur.nearestKm,prev?prev.nearestKm:null,false); // closer (smaller) = worse
+    const aFw=arrow(cur.peakScore,prev?prev.peakScore:null,true);  // higher = worse
+    const since=prev?`vs last check (${fmtDate(dParse(prev.day))})`:'first reading';
+    chips.innerHTML=`
+      <div class="chip"><div class="ck">Nearest active fire</div>
+        <div class="cv">${cur.nearestKm==null?'—':cur.nearestKm+' km'} <span class="arrow ${aKm.c}">${aKm.s}</span></div>
+        <div class="cd">${prev&&prev.nearestKm!=null?`was ${prev.nearestKm} km`:since}</div></div>
+      <div class="chip"><div class="ck">Fire-weather peak · stay</div>
+        <div class="cv">${cur.peakScore==null?'—':cur.peakScore} <span class="arrow ${aFw.c}">${aFw.s}</span></div>
+        <div class="cd">${prev&&prev.peakScore!=null?`was ${prev.peakScore}`:since}</div></div>`;
+    drawSpark(hist);
+  }
+  function drawSpark(hist){
+    const W=200,H=44,pad=4;
+    const vals=hist.map(h=>h.peakScore).filter(v=>v!=null);
+    const svg=`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`;
+    if(vals.length<2){ $('#sparkBox').innerHTML=svg+`<text x="6" y="26" fill="#626d7a" font-family="monospace" font-size="11">need 2+ days</text></svg>`; $('#sparkMini').textContent='—'; return; }
+    const mn=Math.min(...vals,0), mx=Math.max(...vals,40);
+    const xs=(i)=>pad+i*((W-2*pad)/(vals.length-1));
+    const ys=(v)=>H-pad-((v-mn)/(mx-mn||1))*(H-2*pad);
+    let pts=vals.map((v,i)=>`${xs(i).toFixed(1)},${ys(v).toFixed(1)}`).join(' ');
+    const lastBand=bandOf(vals[vals.length-1]);
+    $('#sparkBox').innerHTML=svg
+      +`<polyline points="${pts}" fill="none" stroke="${lastBand.hex}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>`
+      +vals.map((v,i)=>`<circle cx="${xs(i).toFixed(1)}" cy="${ys(v).toFixed(1)}" r="2" fill="${bandOf(v).hex}"/>`).join('')
+      +`</svg>`;
+    const first=vals[0], last=vals[vals.length-1];
+    $('#sparkMini').textContent=`${vals.length} days · ${first}→${last} (${last>first?'+':''}${last-first})`;
+  }
+
+  // ---- ORCHESTRATION ----
+  let busy=false;
+  async function refreshAll(){
+    if(busy)return; busy=true;
+    const btn=$('#refreshBtn'); btn.disabled=true; btn.textContent='Refreshing…'; $('#pulse').style.background='var(--monitor)';
+    let wxR={wxLevel:0,wxLabel:'—',wxHex:'#8b96a3',inRange:false,peakScore:null},
+        fireR={proxLevel:0,proxText:'—',nearestKm:null}, airR={smokeLevel:0,pm:null};
+    try{ wxR=renderWeather(await getWeather()); }
+    catch(e){ $('#nowWx').textContent='weather feed unavailable'; $('#wxVal').textContent='no data'; $('#droughtLine').textContent='Drought memory unavailable (weather feed).'; }
+    try{ airR=renderAir(await getAir()); }
+    catch(e){ $('#aqRow').innerHTML='<div class="aq"><div class="ak">Air quality</div><div class="av">—</div><div class="au">feed unavailable</div></div>'; $('#smokeVal').textContent='no data'; }
+    try{ fireR=renderFires(await getFires()); }
+    catch(e){ $('#firesList').innerHTML=`<div class="errline">Couldn't reach the fogos.pt feed from here. Map rings and weather still work — open <a href="https://fogos.pt/?lat=${HOTEL.lat}&lng=${HOTEL.lng}&zoom=10" target="_blank" rel="noopener">fogos.pt&#8202;↗</a> for the live fire map.</div>`;
+      $('#proxVal').textContent='feed blocked'; $('#proxDesc').textContent='open fogos.pt directly'; }
+    const v=setVerdict(wxR,fireR,airR);
+    const hist=recordSnapshot({nearestKm:fireR.nearestKm,peakScore:wxR.peakScore,verdict:v.lvl,smokePm:airR.pm});
+    renderTrend(hist);
+    const now=new Date();
+    $('#updatedAt').textContent='Updated '+now.toLocaleTimeString('en-GB',{hour:'2-digit',minute:'2-digit'})+' · '+now.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    $('#pulse').style.background='var(--clear)'; btn.disabled=false; btn.textContent='Refresh now'; busy=false;
+  }
+
+  function updateCountdown(){
+    const ci=dParse($('#checkin').value), co=dParse($('#checkout').value);
+    const diff=Math.round((ci-todayMid())/86400000);
+    const nights=Math.max(0,Math.round((co-ci)/86400000));
+    let txt;
+    if(diff>1)txt=`Check-in in <b>${diff}</b> days · ${nights} nights`;
+    else if(diff===1)txt=`Check-in <b>tomorrow</b> · ${nights} nights`;
+    else if(diff===0)txt=`Check-in <b>today</b> · ${nights} nights`;
+    else if(diff>-nights)txt=`<b>Mid-stay</b> · ${nights} nights`;
+    else txt=`Stay has passed`;
+    $('#countdown').innerHTML=txt;
+  }
+
+  // ---- EVENTS ----
+  $('#refreshBtn').addEventListener('click',refreshAll);
+  ['checkin','checkout'].forEach(id=>$('#'+id).addEventListener('change',()=>{updateCountdown();setSeasonal();refreshAll();}));
+  $('#cancelby').addEventListener('change',setDecideLine);
+  $('#resetTrend').addEventListener('click',()=>{ try{localStorage.removeItem(LS+'hist');}catch(e){} renderTrend([]); });
+  $('#applyLoc').addEventListener('click',()=>{
+    const la=parseFloat($('#latIn').value), ln=parseFloat($('#lngIn').value);
+    if(isNaN(la)||isNaN(ln))return;
+    HOTEL={lat:la,lng:ln}; lsSet('hotel',HOTEL);
+    $('#coordChip').innerHTML=`${la.toFixed(4)}° N&nbsp;&nbsp;${Math.abs(ln).toFixed(4)}° W&nbsp;&nbsp;·&nbsp;&nbsp;custom point`;
+    drawHotel(); refreshAll();
+  });
+  let timer=setInterval(()=>{ if($('#autoref').checked)refreshAll(); },600000);
+
+  // ---- BOOT ----
+  (function restore(){
+    const h=lsGet('hotel'); if(h&&h.lat){HOTEL=h; $('#latIn').value=h.lat; $('#lngIn').value=h.lng;
+      $('#coordChip').innerHTML=`${h.lat.toFixed(4)}° N&nbsp;&nbsp;${Math.abs(h.lng).toFixed(4)}° W&nbsp;&nbsp;·&nbsp;&nbsp;custom point`;}
+    const cb=lsGet('cancelby'); if(cb)$('#cancelby').value=cb;
+  })();
+  initMap(); updateCountdown(); setSeasonal(); setDecideLine();
+  renderTrend(lsGet('hist')||[]);
+  refreshAll();
+})();
+</script>
+</body>
+</html>
