@@ -38,7 +38,7 @@
   .panelbox{text-align:right;font-family:var(--mono);font-size:12px;color:var(--mist-dim);display:flex;flex-direction:column;gap:12px;align-items:flex-end}
   .field label{display:block;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--mist-faint);margin-bottom:5px}
   .row{display:flex;gap:6px;align-items:center;justify-content:flex-end}
-  input[type=date],input[type=number]{background:var(--panel);border:1px solid var(--line-bright);color:var(--mist);font-family:var(--mono);font-size:12px;border-radius:7px;padding:6px 8px;color-scheme:dark}
+  input[type=date],input[type=number],input[type=password],input[type=text]{background:var(--panel);border:1px solid var(--line-bright);color:var(--mist);font-family:var(--mono);font-size:12px;border-radius:7px;padding:6px 8px;color-scheme:dark}
   .count{font-size:11.5px;color:var(--mist-faint)} .count b{color:var(--river);font-weight:700}
   .decide{font-size:11px;color:var(--mist-faint)} .decide b{color:var(--mist);font-weight:600}
   .decide.warn b{color:var(--caution)}
@@ -196,6 +196,11 @@
           <input type="number" id="lngIn" step="0.0001" value="-8.0196">
           <button class="btn" id="applyLoc">Set</button>
           <span style="font-size:10px;color:var(--mist-faint)">if you meant a different spot than Ferral</span>
+        </div>
+        <div class="locgrid" style="margin-top:10px;border-top:1px solid var(--line);padding-top:10px">
+          <input type="password" id="firmsKeyIn" placeholder="NASA FIRMS map key" autocomplete="off" style="width:220px">
+          <button class="btn" id="applyFirms">Save</button>
+          <span style="font-size:10px;color:var(--mist-faint)">leave blank to disable satellite hotspots · <a href="https://firms.modaps.eosdis.nasa.gov/api/map_key/" target="_blank" rel="noopener">get a free key ↗</a></span>
         </div>
       </details>
     </div>
@@ -741,11 +746,20 @@
   });
   let timer=setInterval(()=>{ if($('#autoref').checked)refreshAll(); },600000);
 
+  // ---- EVENTS: FIRMS key ----
+  $('#applyFirms').addEventListener('click',()=>{
+    const key=($('#firmsKeyIn').value||'').trim();
+    lsSet('firmsKey',key);
+    CONFIG.firmsMapKey=key; CONFIG.sources.firms=!!key;
+    if(key) refreshAll();
+  });
+
   // ---- BOOT ----
   (function restore(){
     const h=lsGet('hotel'); if(h&&h.lat){HOTEL=h; $('#latIn').value=h.lat; $('#lngIn').value=h.lng;
       $('#coordChip').innerHTML=`${h.lat.toFixed(4)}° N&nbsp;&nbsp;${Math.abs(h.lng).toFixed(4)}° W&nbsp;&nbsp;·&nbsp;&nbsp;custom point`;}
     const cb=lsGet('cancelby'); if(cb)$('#cancelby').value=cb;
+    const fk=lsGet('firmsKey'); if(fk){CONFIG.firmsMapKey=fk; CONFIG.sources.firms=true; $('#firmsKeyIn').value=fk;}
   })();
   initMap(); updateCountdown(); setSeasonal(); setDecideLine();
   renderTrend(lsGet('hist')||[]);
