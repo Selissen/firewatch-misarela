@@ -399,14 +399,47 @@
     else { const h=clamp((60-rhmin)/50,0,1); base=(0.30*t+0.34*h+0.30*w)*(1-0.6*p); }
     return Math.round(clamp(base*droughtMult,0,1)*100);
   }
-  function statusFactor(status){
+  // statusCode numeric preferred; keyword fallback (fogos.pt labels may change upstream)
+  function statusFactor(status, statusCode){
+    if(statusCode!=null){
+      const n=+statusCode;
+      if(!isNaN(n)){
+        if(n<=2)return 1.0;  // active / dispatching
+        if(n<=3)return 0.55; // resolving
+        if(n<=4)return 0.3;  // concluding
+        if(n<=5)return 0.15; // surveillance
+        return 0.05;          // closed
+      }
+    }
     const s=(status||'').toLowerCase();
     if(s.includes('vigil'))return 0.15;
     if(s.includes('encerr')||s.includes('extint'))return 0.05;
     if(s.includes('conclus'))return 0.3;
     if(s.includes('resolu'))return 0.55;
-    if(s.includes('curso')||s.includes('despacho')||s.includes('chegada')||s.includes('refor')||s.includes('curso'))return 1.0;
-    return 0.8;
+    if(s.includes('curso')||s.includes('despacho')||s.includes('chegada')||s.includes('refor'))return 1.0;
+    return 0.8; // unknown — conservative, treat as active
+  }
+  function fireAgeHours(f){
+    if(f.dateTime&&f.dateTime.sec)return(Date.now()/1000-f.dateTime.sec)/3600;
+    if(f.date&&f.hour){
+      try{
+        const p=f.date.split('-'); // DD-MM-YYYY from fogos.pt
+        const[h,m]=(f.hour||'0:0').split(':').map(Number);
+        const d=new Date(+p[2],+p[1]-1,+p[0],h,m||0);
+        if(!isNaN(d))return(Date.now()-d.getTime())/3600000;
+      }catch(e){}
+    }
+    return null;
+  }
+  function upwindFactor(firePos,windDir,windSpeed,dist){
+    if(windDir==null)return 1;
+    const toBearing=bearing(firePos,HOTEL);
+    const windToward=(windDir+180)%360;
+    const theta=Math.abs(((toBearing-windToward+540)%360)-180);
+    const cosTheta=Math.cos(toRad(theta));
+    const windScale=clamp((windSpeed||0)/30,0,1);
+    const distScale=Math.exp(-dist/40);
+    return 1+0.6*Math.max(0,cosTheta)*windScale*distScale;
   }
 
   // ---- MAP ----
@@ -570,21 +603,23 @@
     firmsClusters=firmsClusters||[];
     const fogosList=(json&&json.data)?json.data:[];
     const wind=lastWeather&&lastWeather.current?lastWeather.current.wind_direction_10m:null;
+    const windSpeed=lastWeather&&lastWeather.current?lastWeather.current.wind_speed_10m:0;
 
     // enrich fogos incidents; annotate ones confirmed by a satellite pixel within 2 km
     const enrichedFogos=fogosList.map(f=>{
       const lat=parseFloat(f.lat),lng=parseFloat(f.lng);
       if(isNaN(lat)||isNaN(lng))return null;
       const dist=haversine(HOTEL,{lat,lng});
-      let upwind=false;
-      if(wind!=null){const brg=bearing({lat,lng},HOTEL);const wt=(wind+180)%360;
-        let diff=Math.abs(((brg-wt+540)%360)-180);upwind=diff<55&&dist<60;}
-      const sf=statusFactor(f.status);
+      const uf=upwindFactor({lat,lng},wind,windSpeed,dist);
+      const upwind=uf>1.15&&dist<60; // display label: meaningfully upwind and close
+      const sf=statusFactor(f.status,f.statusCode||f.cod_estado);
       const size=(f.man||0)+(f.terrain||0)+6*(f.aerial||0);
+      const ageH=fireAgeHours(f);
+      const ageMult=ageH==null?1.0:ageH<2?1.2:ageH<6?1.1:ageH<24?1.0:ageH<72?0.85:0.7;
       const distF=Math.exp(-dist/18);
-      const threat=distF*(0.6+Math.log10(1+size)/2)*sf*(upwind?1.4:1);
+      const threat=distF*(0.6+Math.log10(1+size)/2)*sf*ageMult*uf;
       const confirmedBy=firmsClusters.find(c=>haversine({lat,lng},c)<2);
-      return {...f,lat,lng,dist,upwind,sf,size,threat,satStatus:confirmedBy?'confirmed':null,source:'fogos'};
+      return {...f,lat,lng,dist,upwind,sf,size,ageH,threat,satStatus:confirmedBy?'confirmed':null,source:'fogos'};
     }).filter(Boolean);
 
     // track which FIRMS clusters match a fogos incident
@@ -597,12 +632,11 @@
     // synthetic incidents for unmatched FIRMS clusters (cross-border / lead detections)
     const firmsOnly=firmsClusters.filter((_,i)=>!matchedFirmsIdx.has(i)).map(c=>{
       const dist=haversine(HOTEL,c);
-      let upwind=false;
-      if(wind!=null){const brg=bearing(c,HOTEL);const wt=(wind+180)%360;
-        let diff=Math.abs(((brg-wt+540)%360)-180);upwind=diff<55&&dist<60;}
+      const uf=upwindFactor(c,wind,windSpeed,dist);
+      const upwind=uf>1.15&&dist<60;
       const frpSize=c.frp/5; // FRP (MW) as size proxy
       const distF=Math.exp(-dist/18);
-      const threat=distF*(0.6+Math.log10(1+frpSize)/2)*0.8*(upwind?1.4:1)*0.75; // 0.75 unconfirmed discount
+      const threat=distF*(0.6+Math.log10(1+frpSize)/2)*0.8*uf*0.75; // 0.75 unconfirmed discount
       return {lat:c.lat,lng:c.lng,dist,upwind,sf:0.8,size:frpSize,threat,
         satStatus:'unconfirmed',source:'firms',frp:c.frp,pixelCount:c.pixelCount||1,
         location:null,status:'satellite detection',man:0,terrain:0,aerial:0,
