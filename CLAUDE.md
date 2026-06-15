@@ -4,9 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project overview
 
-Single-file static web app — `index.html.html` — that monitors wildfire risk for Hotel Rural Misárela (Ferral, Montalegre, Portugal). No build step, no package manager, no tests. Open the file directly in a browser to run it.
-
-> Note: the file is named `index.html.html` (double extension). If renaming to `index.html`, update any references accordingly.
+Single-file static web app — `index.html` — that monitors wildfire risk for Hotel Rural Misárela (Ferral, Montalegre, Portugal). No build step, no package manager, no tests. Open the file directly in a browser to run it.
 
 ## Architecture
 
