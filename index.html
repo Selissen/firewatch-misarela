@@ -145,6 +145,14 @@
   .metric .mk{color:var(--mist-faint)} .metric .mv{font-family:var(--mono);color:var(--mist);font-weight:500}
   .rcm-line{font-family:var(--mono);font-size:10.5px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
   .rcm-dot{width:6px;height:6px;border-radius:50%;flex:0 0 auto}
+  .conf-tag{font-family:var(--mono);font-size:9.5px;color:var(--mist-faint);margin-bottom:7px;letter-spacing:.04em}
+  .smoke-outlook{padding:0 18px 16px;border-top:1px solid var(--line)}
+  .so-hd{font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--mist-faint);display:block;padding-top:13px;margin-bottom:10px}
+  .smoke-fcst{display:flex;flex-wrap:wrap;gap:10px}
+  .sday{background:var(--panel-2);border:1px solid var(--line);border-radius:9px;padding:10px 12px;min-width:106px}
+  .sday .sdd{font-family:var(--mono);font-size:9.5px;color:var(--mist-faint);letter-spacing:.1em;text-transform:uppercase}
+  .sday .sdv{font-family:var(--display);font-size:17px;font-weight:600;margin:3px 0 1px}
+  .sday .sdl{font-family:var(--mono);font-size:10px;color:var(--mist-dim)}
 
   /* air */
   .aqrow{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;padding:14px 18px 18px}
@@ -311,6 +319,7 @@
   <div class="card" style="margin-top:18px">
     <div class="hd"><h3>Air &amp; smoke right now</h3><span class="meta">Open-Meteo air quality</span></div>
     <div class="aqrow" id="aqRow"><div class="aq skel">Loading…</div></div>
+    <div class="smoke-outlook" id="smokeOutlook" style="display:none"></div>
   </div>
 
   <div class="foot">
@@ -325,6 +334,7 @@
       </table>
       <p><b>Fire weather</b> (0–100, indicative) rises with heat, low humidity and wind, falls with rain, and is scaled by <b>drought memory</b> — the last 30 days of rainfall at this point. <b>Threat ranking</b> weights each fire by distance, size (crew &amp; aircraft committed), upwind position and lifecycle status, so a large fire winding down counts less than a small one taking hold nearby.</p>
       <p><b>IPMA official fire risk</b> (d0 and d1) is the Portuguese weather authority's daily fire-risk class for Montalegre municipality (RCM 1 Reduced → 5 Maximum). Where it covers your stay dates, each day card shows the official class alongside the heuristic — a second opinion from an independently calibrated source. Days beyond the 2-day horizon show the heuristic only.</p>
+      <p><b>Smoke outlook</b> for your stay dates is derived from the Open-Meteo air-quality hourly PM2.5 forecast (~5-day horizon). Where stay days fall inside the horizon, daily peak PM2.5 is shown; days beyond it show a "no forecast" note rather than a fabricated value. <b>Confidence</b> decreases with lead time: ≤3 days ahead = high (scores shown as-is), 4–7 days = medium (~prefix), ≥8 days = low (~prefix + flag). The verdict head and summary carry the same tier, so false precision is never implied.</p>
       <p><b>Satellite hotspots</b> (NASA FIRMS VIIRS, ~375 m, ~1–3 h latency) extend detection across the Spanish border before ground crews report. Hotspots within 2 km of a fogos.pt incident are marked "sat ✦" (confirmed); unmatched ones appear as hollow markers — possible false positives from industrial heat or sun glint. Requires a personal FIRMS map key (set in "Adjust location").</p>
     </div>
     <div>
@@ -470,7 +480,7 @@
   }
   async function getAir(){
     const u=`https://air-quality-api.open-meteo.com/v1/air-quality?latitude=${HOTEL.lat}&longitude=${HOTEL.lng}`
-      +`&current=pm2_5,pm10,european_aqi&timezone=Europe%2FLisbon`;
+      +`&current=pm2_5,pm10,european_aqi&hourly=pm2_5,pm10&timezone=Europe%2FLisbon`;
     const r=await fetch(u); if(!r.ok)throw new Error('air '+r.status); return r.json();
   }
   async function getFires(){
@@ -537,6 +547,14 @@
     for(let i=0;i<hourly.time.length;i++){if(hourly.time[i].startsWith(dateStr)){const v=hourly.relative_humidity_2m[i];if(v!=null&&v<mn)mn=v;}}
     return mn===999?null:mn;
   }
+  function dailyMaxFromHourly(hourly,key,dateStr){
+    if(!hourly||!hourly.time||!hourly[key])return null; let mx=null;
+    for(let i=0;i<hourly.time.length;i++){if(hourly.time[i].startsWith(dateStr)){const v=hourly[key][i];if(v!=null&&(mx===null||v>mx))mx=v;}}
+    return mx;
+  }
+  function confidenceOf(daysAhead){
+    return daysAhead<=3?{label:'high'}:daysAhead<=7?{label:'medium'}:{label:'low'};
+  }
 
   // ---- RENDER WEATHER ----
   let lastWeather=null, lastDrought={mult:1,rain30:null,label:'unknown'};
@@ -574,11 +592,16 @@
       const el=document.createElement('div'); el.className='day'+(inStay?' instay':'');
       const rcmCls=ipmaData[d.time[i]]; const rcmBand=rcmCls!=null?IPMA_RCM[rcmCls]:null;
       const rcmLine=rcmBand?`<div class="rcm-line"><span class="rcm-dot" style="background:${rcmBand.hex}"></span><span style="color:${rcmBand.hex}">${rcmBand.label}</span><span style="color:var(--mist-faint)"> IPMA RCM ${rcmCls}/5</span></div>`:'';
+      const daysAhead=Math.round((dateObj-todayMid())/86400000);
+      const conf=confidenceOf(daysAhead);
+      const scoreDisp=conf.label==='high'?`${score}`:`~${score}`;
+      const confLine=conf.label==='low'?`<div class="conf-tag">low confidence · ${daysAhead}d forecast</div>`
+                    :conf.label==='medium'?`<div class="conf-tag">medium confidence</div>`:'';
       el.innerHTML=`<div class="band" style="background:${band.hex}"></div>
         <div class="dow">${dateObj.toLocaleDateString('en-GB',{weekday:'short'})}${inStay?' <span class="stayflag">• stay</span>':''}</div>
         <div class="date">${fmtDate(dateObj)}</div>
-        <div class="fwi"><span class="num" style="color:${band.hex}">${score}</span><span class="lab" style="color:${band.hex}">${band.label}</span></div>
-        ${rcmLine}<div class="metrics">
+        <div class="fwi"><span class="num" style="color:${band.hex}">${scoreDisp}</span><span class="lab" style="color:${band.hex}">${band.label}</span></div>
+        ${confLine}${rcmLine}<div class="metrics">
           <div class="metric"><span class="mk">High</span><span class="mv">${Math.round(d.temperature_2m_max[i])}°</span></div>
           <div class="metric"><span class="mk">Min RH</span><span class="mv">${rhmin==null?'—':Math.round(rhmin)+'%'}</span></div>
           <div class="metric"><span class="mk">Wind</span><span class="mv">${Math.round(d.wind_speed_10m_max[i])} ${compass(d.wind_direction_10m_dominant[i])}</span></div>
@@ -729,6 +752,33 @@
       el.innerHTML=`<div class="ak">${cd.k}</div><div class="av" style="color:${cd.hex}">${cd.v}</div><div class="au">${cd.u}</div>`;
       row.appendChild(el);
     });
+
+    // smoke outlook for stay days within ~5-day forecast horizon
+    const outel=$('#smokeOutlook');
+    const ci=dParse($('#checkin').value), co=dParse($('#checkout').value);
+    const tk=dayKey(todayMid());
+    const stayDays=[]; for(let d=new Date(ci);d<co;d=new Date(d.getTime()+86400000)) stayDays.push(dayKey(d));
+    const lastH=json&&json.hourly&&json.hourly.time&&json.hourly.time.length?json.hourly.time[json.hourly.time.length-1]:null;
+    const inHorizon=stayDays.filter(dk=>dk>=tk&&(lastH==null||dk<=lastH));
+    const beyond=stayDays.filter(dk=>dk>=tk&&lastH!=null&&dk>lastH);
+    if(inHorizon.length>0||beyond.length>0){
+      const items=inHorizon.map(dk=>{
+        const mx=dailyMaxFromHourly(json.hourly,'pm2_5',dk);
+        const hex=mx==null?'#8b96a3':mx<10?'#3fae7a':mx<25?'#c9b23e':mx<50?'#e0902e':'#e2543b';
+        const lbl=mx==null?'—':mx<10?'Clean':mx<25?'Haze':mx<50?'Smoky':'Heavy';
+        return `<div class="sday"><div class="sdd">${fmtDate(dParse(dk))}</div><div class="sdv" style="color:${hex}">${mx==null?'—':Math.round(mx)}</div><div class="sdl">${lbl}</div></div>`;
+      }).join('');
+      const beyondNote=beyond.length?`<span style="font-family:var(--mono);font-size:11px;color:var(--mist-faint);display:block;margin-top:8px">${beyond.length} stay day${beyond.length>1?'s':''} beyond the 5-day smoke horizon — no forecast available for those days.</span>`:'';
+      const noHorizonNote=!lastH?`<span style="font-family:var(--mono);font-size:11px;color:var(--mist-faint)">Smoke forecast unavailable — showing current read only.</span>`:'';
+      outel.innerHTML=`<span class="so-hd">PM2.5 smoke outlook · your stay</span><div class="smoke-fcst">${items}</div>${beyondNote}${noHorizonNote}`;
+      outel.style.display='';
+    } else if(stayDays.length>0) {
+      outel.innerHTML=`<span class="so-hd">PM2.5 smoke outlook · your stay</span><span style="font-family:var(--mono);font-size:11px;color:var(--mist-faint)">Stay dates are beyond the 5-day smoke forecast horizon — check back closer to arrival.</span>`;
+      outel.style.display='';
+    } else {
+      outel.style.display='none';
+    }
+
     let smokeLevel=0,smokeTxt='—',smokeHex='#3fae7a';
     if(pm!=null){smokeTxt=pm<10?'Clean air':pm<25?'Slight haze':pm<50?'Smoky':'Heavy smoke';
       smokeLevel=pm<10?0:pm<25?1:pm<50?2:3; smokeHex=pm<10?'#3fae7a':pm<25?'#c9b23e':pm<50?'#e0902e':'#e2543b';}
@@ -758,7 +808,9 @@
     $('#verdict').style.setProperty('--vglow',lvl>=2?'var(--ember-glow)':'transparent');
 
     const heads={0:"Conditions look calm for these dates",1:"Worth keeping an eye on — nothing alarming yet",2:"Elevated risk — check daily before you commit",3:"High concern right now — hold off and reassess"};
-    $('#verdictHead').textContent=heads[lvl];
+    const stayConf=du<=3?'high':du<=7?'medium':'low';
+    const confSuffix=stayConf==='low'?` · low confidence (${du}d out)`:stayConf==='medium'?` · medium confidence`:'';
+    $('#verdictHead').textContent=heads[lvl]+confSuffix;
 
     const fcPct=Math.round((1-pw)*100), nowPct=100-fcPct;
     $('#blendLine').innerHTML=`Weighting today: forecast ${fcPct}% / live conditions ${nowPct}% `
@@ -773,7 +825,8 @@
     parts.push(fireR.proxText==='None active' ? `No fires are burning anywhere in Portugal at this moment.`
       : fireR.proxText==='Only winding down' ? `Nearby fires are in resolution or closing out.`
       : `The closest <i>active</i> fire is <b>${fireR.proxText}</b>${fireR.headUpwind?', and it sits upwind':''}.`);
-    if(du>=6) parts.push(`This far out, today's fires are a read on how volatile the corridor is — not a forecast for your stay. Re-open daily; the outlook firms up inside ~5 days.`);
+    if(du>=8) parts.push(`At ${du} days out the fire-weather index has <b>low confidence</b> — treat it as a broad signal, not a precise read. Today's fire activity indicates corridor volatility. Day-cards show <b>~scores</b> to mark this uncertainty. Check back daily as the window narrows.`);
+    else if(du>=4) parts.push(`At ${du} days out the forecast has <b>medium confidence</b>. Useful for watching trends — re-check when you're inside 3 days for a sharper read.`);
     else if(lvl>=2) parts.push(`With arrival close, watch the trend daily and call the hotel about road access if a fire stays upwind.`);
     else if(lvl===1) parts.push(`A quick daily glance should be enough from here.`);
     else parts.push(`If it holds, the booking looks comfortable — still worth a final check the day before.`);
